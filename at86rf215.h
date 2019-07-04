@@ -90,6 +90,7 @@
 #define SR_IRQ_5_AMI		0x0f, 0x20, 5
 #define SR_IRQ_6_TRX_UR		0x0f, 0x40, 6
 #define SR_IRQ_7_BAT_LOW	0x0f, 0x80, 7
+
 #define RG_VREG_CTRL	(0x10)
 #define SR_RESERVED_10_6	0x10, 0x03, 0
 #define SR_DVDD_OK		0x10, 0x04, 2
@@ -128,22 +129,22 @@
 #define SR_RESERVED_1b_3	0x1b, 0x3f, 0
 #define SR_RESERVED_1b_2	0x1b, 0x40, 6
 #define SR_PLL_DCU_START	0x1b, 0x80, 7
-#define RG_PART_NUM	(0x1c)
-#define SR_PART_NUM		0x1c, 0xff, 0
-#define RG_VERSION_NUM	(0x1d)
-#define SR_VERSION_NUM		0x1d, 0xff, 0
-#define RG_MAN_ID_0	(0x1e)
-#define SR_MAN_ID_0		0x1e, 0xff, 0
-#define RG_MAN_ID_1	(0x1f)
-#define SR_MAN_ID_1		0x1f, 0xff, 0
+//#define RG_PART_NUM	(0x1c)
+//#define SR_PART_NUM		0x1c, 0xff, 0
+//#define RG_VERSION_NUM	(0x1d)
+//#define SR_VERSION_NUM		0x1d, 0xff, 0
+//#define RG_MAN_ID_0	(0x1e)
+//#define SR_MAN_ID_0		0x1e, 0xff, 0
+//#define RG_MAN_ID_1	(0x1f)
+//#define SR_MAN_ID_1		0x1f, 0xff, 0
 #define RG_SHORT_ADDR_0	(0x20)
 #define SR_SHORT_ADDR_0		0x20, 0xff, 0
 #define RG_SHORT_ADDR_1	(0x21)
 #define SR_SHORT_ADDR_1		0x21, 0xff, 0
-#define RG_PAN_ID_0	(0x22)
-#define SR_PAN_ID_0		0x22, 0xff, 0
-#define RG_PAN_ID_1	(0x23)
-#define SR_PAN_ID_1		0x23, 0xff, 0
+//#define RG_PAN_ID_0	(0x22)
+//#define SR_PAN_ID_0		0x22, 0xff, 0
+//#define RG_PAN_ID_1	(0x23)
+//#define SR_PAN_ID_1		0x23, 0xff, 0
 #define RG_IEEE_ADDR_0	(0x24)
 #define SR_IEEE_ADDR_0		0x24, 0xff, 0
 #define RG_IEEE_ADDR_1	(0x25)
@@ -176,10 +177,12 @@
 #define SR_MIN_BE		0x2f, 0x0f, 0
 #define SR_MAX_BE		0x2f, 0xf0, 4
 
-#define CMD_REG		0x80
-#define CMD_REG_MASK	0x3f
-#define CMD_WRITE	0x40
+//#define CMD_REG_MASK	0x3f
+//#define CMD_WRITE	0x80
+// These should be modified later.
 #define CMD_FB		0x20
+#define CMD_REG         0x00
+
 
 #define IRQ_BAT_LOW	BIT(7)
 #define IRQ_TRX_UR	BIT(6)
@@ -225,11 +228,66 @@
 #define TRAC_NO_ACK			5
 #define TRAC_INVALID			7
 
-/* Identification registers added */
+/* Custom registers added */
+
 #define RG_RF_PN     (0x000d)
 #define SR_RF_PN             0x000d, 0xffff, 0
 #define RG_RF_VN     (0x000e)
 #define SR_RF_VN             0x000e, 0xffff, 0
+
+#define CMD_REG_MASK    0x3f
+#define CMD_WRITE       0x80
+
+#define STATE_RF_NOP        0x0
+#define STATE_RF_SLEEP      0x1
+#define STATE_RF_TRXOFF     0x2
+#define STATE_RF_TXPREP     0x3
+#define STATE_RF_TX         0x4
+#define STATE_RF_RX         0x5
+#define STATE_RF_RESET      0x7
+
+/******* IRQ registers *******/
+
+#define RG_RF_CFG       (0x0006) //It contains bits to configure the IRQ behavior.
+
+// Radio mode : interruption registers
+#define RG_RF09_IRQM    (0x0100) //The register RFn_IRQM contains the radio IRQ mask.
+#define SR_RF09_IRQM     0x0100, 0xff, 0
+#define RG_RF09_IRQS    (0x0000) // A bit set to 1 indicates that the corresponding IRQ has occurred.
+#define RG_IRQS_0_WAKEUP 0x0000, 0x01, 0
+#define RG_IRQS_1_TRXRDY 0x0000, 0x02, 1
+#define RG_IRQS_2_EDC    0x0000, 0x04, 2
+#define RG_IRQS_3_BATLOW 0x0000, 0x08, 3
+#define RG_IRQS_4_TRXERR 0x0000, 0x10, 4
+#define RG_IRQS_5_IQIFSF 0x0000, 0x20, 5
+
+// Baseband mode : interruption registers
+#define RG_BBC0_IRQM    (0x0300) //BBC0_IRQS contains the baseband IRQ status
+#define SG_BBC0_IRQM     0x0300, 0xff, 0
+#define RG_BBC0_IRQS    (0x0002)
+#define SR_IRQS_0_RXFS   0x0002, 0x01, 0           //This interrupt is issued if a valid PHY header is detected during frame receive.
+#define SR_IRQS_1_RXFE   0x0002, 0x02, 1           //The IRQ RXFE is issued at the end of a successful frame reception.
+#define SR_IRQS_2_RXAM   0x0002, 0x04, 2           //This interrupt occurs during frame receive if the Address Filter is enabled and if the received frame is recognized as matching.
+#define SR_IRQS_3_RXEM   0x0002, 0x08, 3           //This interrupt occurs during frame receive if the Address Filter is enabled and if the received frame is recognized as extended.
+#define SR_IRQS_4_TXFE   0x0002, 0x10, 4           //The IRQ_TXFE is issued when a frame is completely transmitted.
+#define SR_IRQS_5_AGCH   0x0002, 0x20, 5           //The interrupt AGCH is issued during frame receive if a preamble of the selected PHY is detected.
+#define SR_IRQS_6_AGCR   0x0002, 0x40, 6           //The interrupt AGCR is issued during frame receive if a receive process is finished.
+#define RG_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
+
+/******* Auto Mode *******/
+#define RG_BBC0_AMCS        (0x0440) // Auto Mode Configuration and Status
+#define SR_BBC0_AMCS_TX2RX   0x0440, 0X01, 0
+#define SR_BBC0_AMCS_CCATX   0x0440, 0X02, 1
+#define SR_BBC0_AMCS_CCAED   0x0440, 0X04, 2
+#define SR_BBC0_AMCS_AACK    0x0440, 0X08, 3
+#define SR_BBC0_AMCS_AACKS   0x0440, 0X10, 4
+#define SR_BBC0_AMCS_AACKDR  0x0440, 0X20, 5
+#define SR_BBC0_AMCS_AACKFA  0x0440, 0X40, 6 //Auto Acknowledgement FCS Adaption : if set to 1, the FCS type si derived from the FCS type of the received frame. Otherwise, from sub-register PC.FCST (Frame Check Sequence Type)
+#define SR_BBC0_AMCS_AACKFT  0x0440, 0X80, 7 //Auto Acknowledgement Frame Transmit
+#define RG_BBC0_AMEDT       (0x0441)
+#define RG_BBC0_AMAACKPD    (0x0442)
+#define RG_BBC0_AMAACKTL    (0x0443)
+#define RG_BBC0_AMAACKTH    (0x0444)
 
 
 #endif /* !_AT86RF230_H */
