@@ -181,7 +181,7 @@
 //#define CMD_WRITE	0x80
 // These should be modified later.
 #define CMD_FB		0x20
-#define CMD_REG         0x00
+#define CMD_REG         0x80
 
 
 #define IRQ_BAT_LOW	BIT(7)
@@ -218,7 +218,7 @@
 #define STATE_BUSY_RX_AACK_NOCLK 0x1E
 #define STATE_TRANSITION_IN_PROGRESS 0x1F
 
-#define TRX_STATE_MASK		(0x1F)
+//#define TRX_STATE_MASK		(0x1F)
 #define TRAC_MASK(x)		((x & 0xe0) >> 5)
 
 #define TRAC_SUCCESS			0
@@ -233,15 +233,20 @@
 
 
 
+
+
 /* Custom registers added */
 
 #define RG_RF_PN            (0x000d)
-#define SR_RF_PN             0x000d, 0xffff, 0
+//#define SR_RF_PN             0x000d, 0xffff, 0
 #define RG_RF_VN            (0x000e)
-#define SR_RF_VN             0x000e, 0xffff, 0
+//#define SR_RF_VN             0x000e, 0xffff, 0
 
 #define CMD_REG_MASK         0x3f
 #define CMD_WRITE            0x80
+#define CMD_READ             0x00
+#define CMD_REG_MSB          0xff00
+#define CMD_REG_LSB          0x00ff
 
 /************** State machine registers *************/
 
@@ -260,6 +265,7 @@
  * Which state we wanna reach */
 #define RG_RF09_STATE      (0x0102)
 
+#define TRX_STATE_MASK      0xf
 #define STATE_RF_NOP        0x0
 #define STATE_RF_SLEEP      0x1
 #define STATE_RF_TRXOFF     0x2
@@ -298,7 +304,16 @@
 #define SR_IRQS_4_TXFE   0x0002, 0x10, 4           //The IRQ_TXFE is issued when a frame is completely transmitted.
 #define SR_IRQS_5_AGCH   0x0002, 0x20, 5           //The interrupt AGCH is issued during frame receive if a preamble of the selected PHY is detected.
 #define SR_IRQS_6_AGCR   0x0002, 0x40, 6           //The interrupt AGCR is issued during frame receive if a receive process is finished.
-#define RG_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
+#define SG_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
+
+#define IRQS_RXFS        BIT(0)
+#define IRQS_RXFE        BIT(1)
+#define IRQS_RXAM        BIT(2)
+#define IRQS_RXEM        BIT(3)
+#define IRQS_TXFE        BIT(4)
+#define IRQS_AGCH        BIT(5)
+#define IRQS_AGCR        BIT(6)
+#define IRQS_FBLI        BIT(7)
 
 /***************** Auto Mode: IEEE MAC Support ***************/
 
@@ -366,7 +381,7 @@
 #define RG_RF09_TXDFE             (0x0113)
 #define SR_RF09_TXDFE_SR           0x0113, 0x0f, 0
 #define SR_RF09_TXDFE_DM           0x0113, 0x10, 4
-#define SR_RF09_TXDFE_SR           0x0113, 0xe0, 5
+#define SR_RF09_TXDFE_RCUT         0x0113, 0xe0, 5
 //Transmitter Power Amplifier Control
 #define RG_RF09_PAC               (0x0114)
 #define SR_RF09_PAC_TXPWR          0x0114, 0x1f, 0
@@ -415,7 +430,7 @@
 #define RG_RF09_EDV
 /** 3) Frequency Synthesizer (PLL) **/
 //Channel Spacing
-#define RG_RF09_CS
+#define RG_RF09_CS       (0x0104)
 //Channel Center Frequency F0 Low Byte
 #define RG_RF09_CCF0L
 //Channel Center Frequency F0 High Byte
@@ -438,13 +453,7 @@
 #define SR_RF_XOC_FS
 /** 5) External Frontend Control **/
 //Transceiver Auxiliary Settings || Voltage Regulator
-#define RG_RF09_AUXS
-#define SR_RF09_AUXS_PAVS
-#define SR_RF09_AUXS_AVS
-#define SR_RF09_AUXS_AVEN
-#define SR_RF09_AUXS_AVEXT
-#define SR_RF09_AUXS_AGCMAP
-#define SR_RF09_AUXS_EXTLNABYP
+//(see (1) )
 //External Frontend Control Pad Configuration
 #define RG_RF09_PADFE
 /** 7) Battery Monitor (BATMON) **/
@@ -470,6 +479,8 @@
 /** 13) Frame Buffer **/
 /** 14) Frame Check Sequence ( see frame filter ) **/
 /** 15) IEEE MAC Support **/
+#define RG_BBC0_AFC0       (0x320)
+#define SR_BBC0_AFC0_PM     0x320, 0x10, 4
 /** 16) Random Number Generator **/
 /** 17) Phase Measurement Unit**/
 /** 18) Timestamp Counter **/
