@@ -1147,7 +1147,7 @@ static int at86rf215_probe(struct spi_device *spi)
         }
 
         pr_info("[Probing]: Checking whether gpio PINs configured in the device tree could be used ..\n");
-
+/*
         if (gpio_is_valid(rstn)) { // This function turns 0 if gpio is valid
 		// request a single GPIO with initial setup IF NOT
                 pr_info("[Probing]: requesting a RESET PIN for GPIO ..");
@@ -1291,3 +1291,12 @@ module_spi_driver(at86rf215_driver);
 
 MODULE_DESCRIPTION("AT86RF215 Transceiver Driver");
 MODULE_LICENSE("GPL v2");
+
+
+
+
+
+
+
+
+
