@@ -432,15 +432,15 @@
 //Channel Spacing
 #define RG_RF09_CS       (0x0104)
 //Channel Center Frequency F0 Low Byte
-#define RG_RF09_CCF0L    (0x0105)
+#define RG_RF09_CCF0L
 //Channel Center Frequency F0 High Byte
-#define RG_RF09_CCF0H    (0x0106)
+#define RG_RF09_CCF0H
 //Channel Number Low Byte
-#define RG_RF09_CNL      (0x0107)
+#define RG_RF09_CNL
 //Channel Mode and Channel Number High Bit
-#define RG_RF09_CNM      (0x0108)
-#define SR_RF09_CNM_CNH   0x0108, 0x01, 0
-#define SR_RF09_CNM_CM    0x0108, 0xC0, 6
+#define RG_RF09_CNM
+#define SR_RF09_CNM_CNH
+#define SR_RF09_CNM_CM
 //Transceiver PLL
 #define RG_RF09_PLL
 #define SR_RF09_LS

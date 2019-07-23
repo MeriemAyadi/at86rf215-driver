@@ -306,14 +306,14 @@
 #define SR_IRQS_6_AGCR   0x0002, 0x40, 6           //The interrupt AGCR is issued during frame receive if a receive process is finished.
 #define SG_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
 
-#define IRQS_RXFS        BIT(0)
-#define IRQS_RXFE        BIT(1)
-#define IRQS_RXAM        BIT(2)
-#define IRQS_RXEM        BIT(3)
-#define IRQS_TXFE        BIT(4)
-#define IRQS_AGCH        BIT(5)
-#define IRQS_AGCR        BIT(6)
-#define IRQS_FBLI        BIT(7)
+#define IRQS_0_RXFS        BIT(0)
+#define IRQS_1_RXFE        BIT(1)
+#define IRQS_2_RXAM        BIT(2)
+#define IRQS_3_RXEM        BIT(3)
+#define IRQS_4_TXFE        BIT(4)
+#define IRQS_5_AGCH        BIT(5)
+#define IRQS_6_AGCR        BIT(6)
+#define IRQS_7_FBLI        BIT(7)
 
 /***************** Auto Mode: IEEE MAC Support ***************/
 
@@ -432,15 +432,15 @@
 //Channel Spacing
 #define RG_RF09_CS       (0x0104)
 //Channel Center Frequency F0 Low Byte
-#define RG_RF09_CCF0L
+#define RG_RF09_CCF0L    (0x0105)
 //Channel Center Frequency F0 High Byte
-#define RG_RF09_CCF0H
+#define RG_RF09_CCF0H    (0x0106)
 //Channel Number Low Byte
-#define RG_RF09_CNL
+#define RG_RF09_CNL      (0x0107)
 //Channel Mode and Channel Number High Bit
-#define RG_RF09_CNM
-#define SR_RF09_CNM_CNH
-#define SR_RF09_CNM_CM
+#define RG_RF09_CNM      (0x0108)
+#define SR_RF09_CNM_CNH   0x0108, 0x01, 0
+#define SR_RF09_CNM_CM    0x0108, 0xC0, 6
 //Transceiver PLL
 #define RG_RF09_PLL
 #define SR_RF09_LS
