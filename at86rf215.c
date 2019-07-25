@@ -27,18 +27,16 @@
 
 /* The following structure is used by function "at86rf215_get_pdata"
  * and was declared in <linux/spi/at86rf230.h> for AT86RF230 driver. */
+/* TODO: Probably, the following structure will be deleted later and "rstn" will be used directly */
 struct at86rf215_platform_data {
 	int	rstn;
-	int	slp_tr;
-	int	dig2;
-	u8	xtal_trim;
 };
 
 struct at86rf215_local;
-/* at86rf2xx chip depend data.
- * All timings are in us.
- */
 
+/* TODO: I couldnt't find the value of t_sleep_to_off in datasheet */
+/* TODO: The following transition times will be edited. */
+/* All timings are in us. */
 struct at86rf215_chip_data {
 	u16	t_sleep_cycle;
 	u16	t_channel_switch;
@@ -54,6 +52,7 @@ struct at86rf215_chip_data {
 	int	(*set_channel)(struct at86rf215_local *, u8, u8);
 	int	(*set_txpower)(struct at86rf215_local *, s32);
 };
+
 #define AT86RF215_MAX_BUF               (127 + 3)
 /* tx retries to access the TX_ON state
  * if it's above then force change will be started.
@@ -80,6 +79,7 @@ struct at86rf215_state_change {
 	bool			free;
 };
 
+/* TODO: The following structure can be deleted/edited later */
 struct at86rf215_trac {
 	u64	success;
 	u64	success_data_pending;
@@ -95,8 +95,6 @@ struct at86rf215_local {
 	struct ieee802154_hw *		hw;
 	struct at86rf215_chip_data *	data;
 	struct regmap *			regmap;
-	int				slp_tr;
-	bool				sleep;
 
 	struct completion		state_complete;
 	struct at86rf215_state_change	state;
@@ -111,61 +109,19 @@ struct at86rf215_local {
 	struct at86rf215_trac		trac;
 };
 
-static inline void at86rf215_sleep(struct at86rf215_local *lp)
-{
-	if (gpio_is_valid(lp->slp_tr)) {
-		gpio_set_value(lp->slp_tr, 1);
-		usleep_range(lp->data->t_off_to_sleep,
-			     lp->data->t_off_to_sleep + 10);
-		lp->sleep = true;
-	}
-}
-
-static inline void at86rf215_awake(struct at86rf215_local *lp)
-{
-	if (gpio_is_valid(lp->slp_tr)) {
-		gpio_set_value(lp->slp_tr, 0);
-		usleep_range(lp->data->t_sleep_to_off,
-			     lp->data->t_sleep_to_off + 100);
-		lp->sleep = false;
-	}
-}
-
+/* TODO: For both following functions, should we check if we're in state SLEEP
+ * and if so should we transit to state TRXOFF ?
+ */
 static inline int __at86rf215_write(struct at86rf215_local *lp,
 				    unsigned int addr, unsigned int data)
 {
-	bool sleep = lp->sleep;
-	int ret;
-
-	/* awake for register setting if sleep */
-	if (sleep)
-		at86rf215_awake(lp);
-
-	ret = regmap_write(lp->regmap, addr, data);
-
-	/* sleep again if was sleeping */
-	if (sleep)
-		at86rf215_sleep(lp);
-
-	return ret;
+	return regmap_write(lp->regmap, addr, data);
 }
+
 static inline int __at86rf215_read(struct at86rf215_local *lp,
 				   unsigned int addr, unsigned int *data)
 {
-	bool sleep = lp->sleep;
-	int ret;
-
-	/* awake for register setting if sleep */
-	if (sleep)
-		at86rf215_awake(lp);
-
-	ret = regmap_read(lp->regmap, addr, data);
-
-	/* sleep again if was sleeping */
-	if (sleep)
-		at86rf215_sleep(lp);
-
-	return ret;
+	return regmap_read(lp->regmap, addr, data);
 }
 
 static inline int at86rf215_read_subreg(struct at86rf215_local *lp,
@@ -181,32 +137,16 @@ static inline int at86rf215_read_subreg(struct at86rf215_local *lp,
 	return rc;
 }
 
+/* TODO: For the following functions, should we check if we're in state SLEEP
+ * and if so should we transit to state TRXOFF ?
+ */
 static inline int at86rf215_write_subreg(struct at86rf215_local *lp,
 					 unsigned int addr, unsigned int mask,
 					 unsigned int shift, unsigned int data)
 {
-	bool sleep = lp->sleep;
-	int ret;
-
-	/* awake for register setting if sleep */
-	if (sleep)
-		at86rf215_awake(lp);
-
-	ret = regmap_update_bits(lp->regmap, addr, mask, data << shift);
-
-	/* sleep again if was sleeping */
-	if (sleep)
-		at86rf215_sleep(lp);
-
-	return ret;
+	return regmap_update_bits(lp->regmap, addr, mask, data << shift);
 }
 
-static inline void at86rf215_slp_tr_rising_edge(struct at86rf215_local *lp)
-{
-	gpio_set_value(lp->slp_tr, 1);
-	udelay(1);
-	gpio_set_value(lp->slp_tr, 0);
-}
 static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
@@ -607,7 +547,7 @@ static int at86rf215_start(struct ieee802154_hw *hw)
 	if (IS_ENABLED(CONFIG_IEEE802154_AT86RF230_DEBUGFS))
 		memset(&lp->trac, 0, sizeof(struct at86rf215_trac));
 
-	at86rf215_awake(lp);
+	/* TODO: TRANSMITION to TRXOFF state before enabling irq*/
 	enable_irq(lp->spi->irq);
 
 	/* The following line will be implemented later */
@@ -622,7 +562,7 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
 	struct at86rf215_local *lp = hw->priv;
 	u8 csma_seed[2];
 
-	/* The following line will be implemented later */
+	/* TODO: The following line will be implemented later */
 	//at86rf215_sync_state_change(lp, STATE_FORCE_TRX_OFF);
 
 	disable_irq(lp->spi->irq);
@@ -636,7 +576,8 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
 	at86rf215_write_subreg(lp, SR_CSMA_SEED_0, csma_seed[0]);       // ??
 	at86rf215_write_subreg(lp, SR_CSMA_SEED_1, csma_seed[1]);       // ??
 
-	at86rf215_sleep(lp);
+        /* TODO: TRANSMITION to SLEEP state*/
+
 }
 
 /* Change channel : The state must be TRXOFF */
@@ -875,7 +816,6 @@ static struct at86rf215_chip_data at86rf215_data = {
 	.t_reset_to_off		= 1,    /* tRESET_TRXOFF */
 	.t_off_to_aack		= 90,   /* tTRXOFF_TXPREP */
 	.t_off_to_tx_on		= 90,   /* tTRXOFF_RX */
-	//.t_off_to_sleep = ?,   /* Apparament, sa valeur n'existe pas. */
 	.t_sleep_to_off		= 1,    /* tSLEEP_TRXOFF */
 	.t_frame		= 4096, /* ? */
 	.t_p_ack		= 545,
@@ -884,7 +824,7 @@ static struct at86rf215_chip_data at86rf215_data = {
 	.set_txpower		= at86rf2xx_set_txpower,
 };
 
-static int at86rf215_hw_init(struct at86rf215_local *lp, u8 xtal_trim)
+static int at86rf215_hw_init(struct at86rf215_local *lp)
 {
 	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH; /* Could be IRQ_ACTIVE_LOW */
 
@@ -962,8 +902,7 @@ static int at86rf215_hw_init(struct at86rf215_local *lp, u8 xtal_trim)
 
 
 /* Check if device tree definition for the spi device is correct. */
-static int at86rf215_get_pdata(struct spi_device *spi, int *rstn, int *slp_tr,
-			       u8 *xtal_trim)
+static int at86rf215_get_pdata(struct spi_device *spi, int *rstn)
 {
 	struct at86rf215_platform_data *pdata = spi->dev.platform_data;
 	int ret;
@@ -974,19 +913,12 @@ static int at86rf215_get_pdata(struct spi_device *spi, int *rstn, int *slp_tr,
 			return -ENOENT;
 
 		*rstn = pdata->rstn;
-		*slp_tr = pdata->slp_tr;
-		*xtal_trim = pdata->xtal_trim;
 		return 0;
 	}
 
 	/* Get both GPIO Number */
 	*rstn = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
-	*slp_tr = of_get_named_gpio(spi->dev.of_node, "sleep-gpio", 0);
-	/* search for the property in a node (from the device tree) and
-	 * read 8-bit value(s) from it. */
-	ret = of_property_read_u8(spi->dev.of_node, "xtal-trim", xtal_trim);
-	if (ret < 0 && ret != -EINVAL)
-		return ret;
+
 	return 0;
 }
 
@@ -1137,12 +1069,12 @@ static int at86rf215_probe(struct spi_device *spi)
 {
 	struct ieee802154_hw *hw; /*IEEE 802.15.4 hardware device */
 	struct at86rf215_local *lp;
-	int rc, rstn, slp_tr, irq_type;
+	int rc, rstn, irq_type;
 	unsigned int status;
-	u8 xtal_trim = 0;
 
 	pr_info("[Probing]: AT86RF215 probe function is called ..\n");
 
+	/* Define Spi MODE */
 	if (!spi->irq) {
 		dev_err(&spi->dev, "no IRQ specified\n");
 		return -EINVAL;
@@ -1150,7 +1082,7 @@ static int at86rf215_probe(struct spi_device *spi)
 
 	pr_info(
 		"[Probing]: Checking whether device tree is well configured ..\n");
-	rc = at86rf215_get_pdata(spi, &rstn, &slp_tr, &xtal_trim);
+	rc = at86rf215_get_pdata(spi, &rstn);
 	if (rc < 0) {
 		dev_err(&spi->dev,
 			"failed to parse platform_data : %d .\n Please check your device tree. ",
@@ -1169,14 +1101,6 @@ static int at86rf215_probe(struct spi_device *spi)
 			return rc;
 	}
 
-	if (gpio_is_valid(slp_tr)) {
-		/* request a single GPIO with initial setup IF NOT */
-		rc = devm_gpio_request_one(&spi->dev, slp_tr,
-					   GPIOF_OUT_INIT_LOW, "slp_tr");
-		pr_info("[Probing]: requesting a SLEEP PIN for GPIO ..");
-		if (rc)
-			return rc;
-	}
 	if (gpio_is_valid(rstn)) {
 		pr_info("[Probing]: The board is being reset.");
 		udelay(1);
@@ -1198,7 +1122,6 @@ static int at86rf215_probe(struct spi_device *spi)
 	lp = hw->priv;
 	lp->hw = hw;
 	lp->spi = spi;
-	lp->slp_tr = slp_tr;
 	hw->parent = &spi->dev;
 
 	/* why would he request an extended address ( sur 8 octets ) ? We'll see LATER. */
@@ -1229,7 +1152,7 @@ static int at86rf215_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, lp); /* spi->dev->driver_data = lp */
 
-	rc = at86rf215_hw_init(lp, xtal_trim);
+	rc = at86rf215_hw_init(lp);
 	if (rc) {
 		printk(KERN_ALERT "at86rf215_hw_init FAILED.");
 		goto free_dev;
@@ -1245,7 +1168,8 @@ static int at86rf215_probe(struct spi_device *spi)
 	if (!irq_type)
 		irq_type = IRQF_TRIGGER_HIGH;
 
-	/* Allocate an interrupt line */
+	/* Allocate an interrupt line
+	 * lp: is passed as an argument to at86rf215_isr */
 	rc = devm_request_irq(&spi->dev, spi->irq, at86rf215_isr,
 			      IRQF_SHARED | irq_type, dev_name(&spi->dev), lp);
 	if (rc) {
@@ -1256,7 +1180,7 @@ static int at86rf215_probe(struct spi_device *spi)
 	/* disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
 	/* going into sleep by default */
-	at86rf215_sleep(lp);
+	/* TODO: Reach state TRXOFF */
 
 	rc = at86rf215_debugfs_init(lp);
 	if (rc) {
