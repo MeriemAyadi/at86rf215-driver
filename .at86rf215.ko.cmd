@@ -1,1 +1,0 @@
-cmd_/home/pi/at86rf215/at86rf215.ko := ld -EL -r  -T ./scripts/module-common.lds --build-id  -o /home/pi/at86rf215/at86rf215.ko /home/pi/at86rf215/at86rf215.o /home/pi/at86rf215/at86rf215.mod.o ;  true

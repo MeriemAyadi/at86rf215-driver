@@ -287,7 +287,7 @@
 #define SR_RF09_IRQM     0x0100, 0xff, 0
 #define RG_RF09_IRQS    (0x0000)         //A bit set to 1 indicates that the corresponding IRQ has occurred.
 #define RG_IRQS_0_WAKEUP 0x0000, 0x01, 0 //Used when the procedure from state SLEEP/DEEP_SLEEP or power-up or RESET procedure is completed.
-#define RG_IRQS_1_TRXRDY 0x0000, 0x02, 1 //Used when the command TXPREP is written to the register RFn_CMD and transceiver reaches the state TXPRE.
+#define RG_IRQS_1_TRXRDY 0x0000, 0x02, 1 //Used when the command TXPREP is written to the register RFn_CMD and transceiver reaches the state TXPREP.
 #define RG_IRQS_2_EDC    0x0000, 0x04, 2 //Used when a single or continuous energy measurement is completed. WARNING:It is not set if the automatic energy measurement mode is used.
 #define RG_IRQS_3_BATLOW 0x0000, 0x08, 3 //When the battery monitor detects a voltage at EVDD that is below the threshold voltage.
 #define RG_IRQS_4_TRXERR 0x0000, 0x10, 4 //When a transceiver error is detected.
