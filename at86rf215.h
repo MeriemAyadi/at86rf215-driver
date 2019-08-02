@@ -254,31 +254,30 @@
  * Current state */
 #define RG_RF09_CMD         (0x0103)
 
+#define RF_NOP_STATUS        0X0
+#define RF_SLEEP_STATUS      0X1
 #define RF_TRXOFF_STATUS     0x2
 #define RF_TXPREP_STATUS     0x3
 #define RF_TX_STATUS         0x4
 #define RF_RX_STATUS         0x5
-#define RF_TRANSITION_STATUS 0x6
 #define RF_RESET_STATUS      0x7
 
 /* STATE registers:
  * Which state we wanna reach */
 #define RG_RF09_STATE      (0x0102)
 
-#define TRX_STATE_MASK      0xf
-#define STATE_RF_NOP        0x0
-#define STATE_RF_SLEEP      0x1
 #define STATE_RF_TRXOFF     0x2
 #define STATE_RF_TXPREP     0x3
 #define STATE_RF_TX         0x4
 #define STATE_RF_RX         0x5
+#define STATE_RF_TRANSITION 0x6
 #define STATE_RF_RESET      0x7
 
 /*************** IRQ registers ******************/
 
 // Interrupt signalling
 #define RG_RF_CFG          (0x0006)         //It contains bits to configure the IRQ behavior.
-#define SR_RF_CFG_          0x0006, 0x03, 0 //It configure the pads driver strength of the pins IRQ, MISO, and the frontend control (i.e. FEA09, FEB09, FEA24, FEB24) pins : 2, 4, 6, 8 mA.
+#define SR_RF_CFG_DRV          0x0006, 0x03, 0 //It configure the pads driver strength of the pins IRQ, MISO, and the frontend control (i.e. FEA09, FEB09, FEA24, FEB24) pins : 2, 4, 6, 8 mA.
 #define SR_RF_CFG_IRQP      0x0006, 0x04, 2 //It configures the IRQ pin polarity. ( active high or low )
 #define SR_RF_CFG_IRQMM     0x0006, 0x08, 3 //It configures the IRQ mask mode. 
 
@@ -286,16 +285,23 @@
 #define RG_RF09_IRQM    (0x0100)         //The register RFn_IRQM contains the radio IRQ mask.
 #define SR_RF09_IRQM     0x0100, 0xff, 0
 #define RG_RF09_IRQS    (0x0000)         //A bit set to 1 indicates that the corresponding IRQ has occurred.
-#define RG_IRQS_0_WAKEUP 0x0000, 0x01, 0 //Used when the procedure from state SLEEP/DEEP_SLEEP or power-up or RESET procedure is completed.
-#define RG_IRQS_1_TRXRDY 0x0000, 0x02, 1 //Used when the command TXPREP is written to the register RFn_CMD and transceiver reaches the state TXPREP.
-#define RG_IRQS_2_EDC    0x0000, 0x04, 2 //Used when a single or continuous energy measurement is completed. WARNING:It is not set if the automatic energy measurement mode is used.
-#define RG_IRQS_3_BATLOW 0x0000, 0x08, 3 //When the battery monitor detects a voltage at EVDD that is below the threshold voltage.
-#define RG_IRQS_4_TRXERR 0x0000, 0x10, 4 //When a transceiver error is detected.
-#define RG_IRQS_5_IQIFSF 0x0000, 0x20, 5 //When the I/Q data interface synchronization fails.
+#define SR_IRQS_0_WAKEUP 0x0000, 0x01, 0 //Used when the procedure from state SLEEP/DEEP_SLEEP or power-up or RESET procedure is completed.
+#define SR_IRQS_1_TRXRDY 0x0000, 0x02, 1 //Used when the command TXPREP is written to the register RFn_CMD and transceiver reaches the state TXPREP.
+#define SR_IRQS_2_EDC    0x0000, 0x04, 2 //Used when a single or continuous energy measurement is completed. WARNING:It is not set if the automatic energy measurement mode is used.
+#define SR_IRQS_3_BATLOW 0x0000, 0x08, 3 //When the battery monitor detects a voltage at EVDD that is below the threshold voltage.
+#define SR_IRQS_4_TRXERR 0x0000, 0x10, 4 //When a transceiver error is detected.
+#define SR_IRQS_5_IQIFSF 0x0000, 0x20, 5 //When the I/Q data interface synchronization fails.
+
+#define IRQS_0_WAKEUP        BIT(0)
+#define IRQS_1_TRXRDY        BIT(1)
+#define IRQS_2_EDC           BIT(2)
+#define IRQS_3_BATLOW        BIT(3)
+#define IRQS_4_TRXERR        BIT(4)
+#define IRQS_5_IQIFSF        BIT(5)
 
 // Baseband mode : interruption registers
 #define RG_BBC0_IRQM    (0x0300)                   //BBC0_IRQS contains the baseband IRQ status
-#define SG_BBC0_IRQM     0x0300, 0xff, 0
+#define SR_BBC0_IRQM     0x0300, 0xff, 0
 #define RG_BBC0_IRQS    (0x0002)
 #define SR_IRQS_0_RXFS   0x0002, 0x01, 0           //This interrupt is issued if a valid PHY header is detected during frame receive.
 #define SR_IRQS_1_RXFE   0x0002, 0x02, 1           //The IRQ RXFE is issued at the end of a successful frame reception.
@@ -304,7 +310,7 @@
 #define SR_IRQS_4_TXFE   0x0002, 0x10, 4           //The IRQ_TXFE is issued when a frame is completely transmitted.
 #define SR_IRQS_5_AGCH   0x0002, 0x20, 5           //The interrupt AGCH is issued during frame receive if a preamble of the selected PHY is detected.
 #define SR_IRQS_6_AGCR   0x0002, 0x40, 6           //The interrupt AGCR is issued during frame receive if a receive process is finished.
-#define SG_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
+#define SR_IRQS_7_FBLI   0x0002, 0x80, 7           //The interrupt FBLI can be used to monitor the receive frame buffer level.
 
 #define IRQS_0_RXFS        BIT(0)
 #define IRQS_1_RXFE        BIT(1)
@@ -320,7 +326,7 @@
 /** 1. Frame filter  **/
 #define RG_BBC0_PC          (0x301)
 #define SR_BBC0_PC_PT        0x301,0x03, 0 //It sets the PHY type (BB_PHYOFF, BB_MRFSK, BB_MROFDM, BB_MROQPSK)
-#define SR_BBC0_PC_BBRN      0x301,0x04, 2 //It enables the baseband.
+#define SR_BBC0_PC_BBEN      0x301,0x04, 2 //It enables the baseband.
 #define SR_BBC0_PC_FCST      0x301,0x08, 3 //It configures the used Frame Check Sequence Type. ( 2 or 4 butes ? )
 #define SR_BBC0_PC_TXAFCS    0x301,0x10, 4 //It is set to 1 during transmission, the internal calculated FCS (type dependent of FCST) is inserted into the last 2 or 4 PSDU octets, respectively.
 #define SR_BBC0_PC_FCSOK     0x301,0x20, 5 //It indicates whether the FCS of a detected frame is valid or not
@@ -365,7 +371,7 @@
 
 #define RG_IQIFC1        (0x000B)         //The register configures the skew behavior, the chip mode of the I/Q data interface and contains the status of the I/Q data interface receiver.
 #define SR_IQIFC1_SKEWDRV 0x000B, 0x03, 0 //The register values define the time from the RXCLKn/p clock edge to the next RXDxxn/p signal edge.
-#define SR_IQIFC1_CHPM    0x000B, 0x70, 4 //It configures the "working mode" of the chip and define which parts (RF, baseband, I/Q IF) are in operation. For our case : 0x4 ==> RF_MODE_BBRF09 .
+#define SR_IQIFC1_CHPM    0x000B, 0x70, 4 //It configures the "working mode" of the chip and define which parts (RF, baseband, I/Q IF) are in operation.
 #define SR_IQIFC1_FAILSF  0x000B, 0x80, 7 //This bit indicates that the LVDS receiver is in failsafe mode. The failsafe mode is entered if the LVDS receiver is not driven by an LVDS driver.
 
 #define RG_IQIFC2        (0x000C)         //The register contains the status of the I/Q data interface deserializer.
@@ -423,7 +429,7 @@
 //Energy Detection Configuration
 #define RG_RF09_EDC
 //Receiver Energy Detection Averaging Duration
-#define RG_RF09_EDD
+#define RG_RF09_EDD      (0x10f)
 #define SR_RF09_EDD_DTB
 #define SR_RF09_EDD_DF
 //Receiver Energy Detection Value
@@ -463,20 +469,17 @@
 #define SR_RF_BMDVC_BMHR_BMS
 /** 8) Analog Calibrations **/
 /** 9) Baseband Core **/
-#define RG_BBC09_PC
-#define SR_BBC09_PC_PT
-#define SR_BBC09_PC_BBEN
-#define SR_BBC09_PC_FCST
-#define SR_BBC09_PC_TXAFCS
-#define SR_BBC09_PC_FCSOK
-#define SR_BBC09_PC_FCSFE
-#define SR_BBC09_PC_CTX
-
+/* See 1) Frame filter */
 //These will be defined later
 /** 10) MR-FSK PHY **/
 /** 11) MR-OFDM PHY **/
 /** 12) O-QPSK PHY **/
 /** 13) Frame Buffer **/
+#define RG_BBC0_TXFLL      (0x0306)
+#define RG_BBC0_TXFLH      (0x0307)
+#define SR_BBC0_TXFLH       0x0307, 0x07, 0
+#define RG_BBC0_FBTXS      (0x2800)
+#define RG_BBC0_FBTXE	   (0x2FFE)
 /** 14) Frame Check Sequence ( see frame filter ) **/
 /** 15) IEEE MAC Support **/
 #define RG_BBC0_AFC0       (0x320)

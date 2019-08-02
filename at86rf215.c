@@ -52,7 +52,8 @@ struct at86rf215_chip_data {
 	int	(*set_txpower)(struct at86rf215_local *, s32);
 };
 
-#define AT86RF215_MAX_BUF               (127 + 3)
+/* TODO The buffer size might change. */
+#define AT86RF215_MAX_BUF               (2047)
 /* tx retries to access the TX_ON state */
 #define AT86RF215_MAX_TX_RETRIES        7
 /* We use the recommended 5 minutes timeout to recalibrate */
@@ -136,14 +137,26 @@ static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 	switch (reg) {
 	case RG_RF09_CMD:
 	case RG_RF09_STATE:
-	case RG_RF09_CS:
-	case RG_RF09_PAC:
 	case RG_BBC0_AMEDT:
 	case RG_BBC0_AMCS:
 	case RG_BBC0_AFC0:
 	case RG_RF_CFG:
 	case RG_BBC0_IRQM:
 	case RG_RF09_IRQM:
+	case RG_BBC0_TXFLL:
+	case RG_BBC0_TXFLH:
+	case RG_BBC0_PC:
+	case RG_RF09_CCF0L:
+	case RG_RF09_CCF0H:
+	case RG_RF09_CS:
+	case RG_RF09_CNL:
+	case RG_RF09_RXBWC:
+	case RG_RF09_RXDFE:
+	case RG_RF09_EDD:
+	case RG_RF09_TXCUTC:
+	case RG_RF09_TXDFE:
+	case RG_RF09_PAC:
+	case RG_IQIFC1:
 		return true;
 	default:
 		return false;
@@ -191,6 +204,8 @@ static bool at86rf215_reg_precious(struct device *dev, unsigned int reg)
 	switch (reg) {
 	case RG_RF09_IRQS:
 	case RG_BBC0_IRQS:
+	case RG_BBC0_IRQM:
+	case RG_RF09_IRQM:
 		return true;
 	default:
 		return false;
@@ -407,22 +422,122 @@ static irqreturn_t at86rf215_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-/* TODO : The following function is being implemented. */
-static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
+/* TODO : The following function will be implemented. */
+static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb){return 0;}
+static int at86rf215_tx(struct ieee802154_hw *hw)
 {
+	struct at86rf215_local *lp = hw->priv;
+	unsigned int val, state, len_h, len_l,len = 0x7ff;
+	int rc, k, i=0;
+	uint16_t offset =0;
+	uint8_t data;
+
 	/* **** BABY STEPS **** */
 	/* Check if were in state TRXOFF */
-	/* Write frame length */
-	/* Enable/Disable FCS */
-	/* Move to TXPREP state, transmission is possible ONLY from this state.*/
-	/* Wait until an interruption TRXRDY is triggered : read RG_IRQS_1_TRXRDY. (BC, boucle infinie) */
-	/* Move to TX state, and write the frame */
+	rc = __at86rf215_read(lp, RG_RF09_CMD, &state);
+	if (rc) {
+		printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
+		return rc;
+	}
 
+	if (state != RF_TRXOFF_STATUS){
+		printk (KERN_DEBUG "Switching to TRXOFF_STATUS");
+		rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TRXOFF_STATUS);
+	        if (rc) {
+        	        printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
+                	return rc;
+	        }
+	}
+
+	/* Write frame length */
+/*	len_l = len & 0x00ff;
+	len_h = ((len & 0x0f00) >> 8);
+	rc = ( __at86rf215_write(lp, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
+*/
+
+/*        rc = __at86rf215_read(lp, RG_BBC0_TXFLL, &val);
+        if (rc) {
+                printk(KERN_DEBUG "Error while READING TXFLL register.");
+                return rc;
+        }
+	printk(KERN_DEBUG "RG_BBC0_TXFLL = %x", val);
+*/
+/*
+        rc = __at86rf215_write(lp, RG_BBC0_TXFLL, 0xff);
+        if (rc) {
+                printk(KERN_DEBUG "Error while writing TXFLL register.");
+                return rc;
+        }
+
+	rc = at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7);
+	if (rc) {
+               	printk(KERN_DEBUG "Error while writing TXFLH register.");
+               	return rc;
+        }
+
+	rc = __at86rf215_read(lp, RG_RF09_CMD, &state);
+        if (rc) {
+                printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
+                return rc;
+        }
+*/
+	/* Enable FCS */
+/*	rc= at86rf215_write_subreg(lp, SR_BBC0_PC_TXAFCS, 1);
+        if (rc) {
+                printk(KERN_DEBUG "Error while enabling FCS.");
+                return rc;
+        }
+*/
+	/* Download the frame (Not from MAC, jsut random caracters) */
+/*	for (k=0; k<len; k++){
+		get_random_bytes(&data, sizeof(data));
+		__at86rf215_write(lp, RG_BBC0_FBTXS + offset, data);
+		offset ++;
+	}
+*/
+	/* Move to TXPREP state, transmission is possible ONLY from this state.*/
+/*	rc = __at86rf215_read(lp, RG_RF09_CMD, &state);
+        if (rc)
+                return rc;
+	if (state == RF_TRXOFF_STATUS){
+	        rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TXPREP_STATUS);
+		        if (rc) {
+                	printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
+                	return rc;
+                	}
+	}
+	else
+		return rc;
+*/
+	/* Wait until an interruption TRXRDY is triggered : read SR_IRQS_1_TRXRDY. (BC, boucle infinie) */
+/*        while (!(IRQS_1_TRXRDY) & (i<100)) { i++; }
+	if (i==100){
+		printk(KERN_DEBUG " NO IRS TRXRDY TRIGGERED !");
+		return rc;
+	}
+*/	/* Move to TX state, and write the frame */
+/*        if (state == RF_TXPREP_STATUS){
+                rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TX_STATUS);
+                        if (rc) {
+                        printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
+                        return rc;
+                        }
+        }
+        else
+                return rc;
+*/
 	/* NB: When the frame transmission is completed, an interrupt TXFE is
 	 * trigered and state TXPREP is reached automatically. The at86rf215_isr
 	 * handler will be called and functions tx_complete, tx_on and
 	 * tx_trac_check will be modified. */
 
+/*µ	i =0;
+	while (!(IRQS_4_TXFE) & (i<10000)) { i++; }
+        if (i==10000){
+		printk(KERN_DEBUG " NO IRQ TXFE TRIGGERED !");
+                return rc;
+	}
+*/
 	return 0;
 }
 
@@ -608,6 +723,14 @@ static struct at86rf215_chip_data at86rf215_data = {
 static int at86rf215_hw_init(struct at86rf215_local *lp)
 {
 	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH; /* Could be IRQ_ACTIVE_LOW */
+	unsigned int val;
+
+
+        rc = __at86rf215_read(lp, RG_RF09_CMD, &val);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CMD cant be read.");
+        }
+        printk(KERN_DEBUG " RG_RF09_CMD : %x", val);
 
 	/* Initial state in the state machine graph :TRXOFF */
 	rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TRXOFF_STATUS);
@@ -616,6 +739,12 @@ static int at86rf215_hw_init(struct at86rf215_local *lp)
 		return rc;
 	}
 
+
+/*        rc = __at86rf215_write(lp, RG_BBC0_IRQM, 0X1f);
+        if (rc){
+                printk(KERN_DEBUG "RG_BBC0_IRQM cant be written.");
+        }
+*/
 	/* Configuring the IRQ pin polarity. */
 	irq_type = irq_get_trigger_type(lp->spi->irq);
 	if (irq_type == IRQ_TYPE_EDGE_FALLING || irq_type == IRQ_TYPE_LEVEL_LOW)
@@ -631,18 +760,126 @@ static int at86rf215_hw_init(struct at86rf215_local *lp)
  *      if (rc)
  *              return rc;
  */
-	/* Activate Reception complete and transmition complete interrupts. */
-	rc = at86rf215_write_subreg(lp, SR_RF09_IRQM, IRQS_1_RXFE);
-	if (rc) {
-		printk(KERN_DEBUG "SG_BBC0_IRQM");
-		return rc;
+
+
+        /* Enabling interrupts for Baseband Mode */
+/*        rc = __at86rf215_write(lp, RG_BBC0_IRQM, 0x1f);
+        if (rc){
+                printk(KERN_DEBUG "Error while enabling interrupts: RG_BBC0_IRQM");
+                return rc;
+        }
+*/
+	/*Enable the baseband
+        rc = at86rf215_write_subreg(lp, SR_BBC0_PC_BBEN, 1);
+        if (rc){
+                printk(KERN_DEBUG "SR_BBC0_PC_BBEN,Something went wrong while writing in config regs");
+                return rc;
+        }
+*/        rc = __at86rf215_write(lp, RG_RF09_CCF0L, 0x20);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CCF0L:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_CCF0H, 0x8D);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CCF0H:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_CS, 0x30);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CS:Something went wrong while writing in config regs");
+                return rc;
 	}
-	rc = at86rf215_write_subreg(lp, SR_RF09_IRQM, IRQS_4_TXFE);
-	if (rc) {
-		printk(KERN_DEBUG "SG_BBC0_IRQM next");
+        rc = __at86rf215_write(lp, RG_RF09_CNL, 0x03);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CNL:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_RXBWC, 0x09);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_RXBWC:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_RXDFE, 0x83);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_RXDFE:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_EDD, 0x7A);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_EDD:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_TXCUTC, 0x0B);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_TXCUTC:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_TXDFE, 0x83);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_TXDFE:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = __at86rf215_write(lp, RG_RF09_PAC, 0x7C);
+
+	if (rc){
+		printk(KERN_DEBUG "RG_RF09_PAC:Something went wrong while writing in config regs");
 		return rc;
 	}
 
+        rc = at86rf215_read_subreg(lp, SR_IQIFC1_CHPM, &val);
+        if (rc){
+                printk(KERN_DEBUG "RG_IQIFC1_CHPM:Something went wrong while writing in config regs");
+                return rc;
+        }
+	printk(KERN_DEBUG "SR_IQIFC1_CHPM = %x", val);
+
+/*        rc = at86rf215_write_subreg(lp, SR_RF_CFG_IRQMM, 0);
+        if (rc){
+                printk(KERN_DEBUG "SR_RF_CFG_IRQMM,Something went wrong while writing in config regs");
+                return rc;
+        }
+*/
+        rc = at86rf215_read_subreg(lp, SR_RF_CFG_IRQMM, &val);
+        if (rc){
+                printk(KERN_DEBUG "SR_RF_CFG_IRQMM:Something went wrong while writing in config regs");
+                return rc;
+        }
+        printk(KERN_DEBUG "SR_RF_CFG_IRQMM = %x", val);
+
+        rc = __at86rf215_write(lp, RG_RF09_IRQM, 0x1F);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_IRQM:Something went wrong while writing in config regs");
+                return rc;
+        }
+
+
+        rc = __at86rf215_write(lp, RG_BBC0_IRQM, 0x1f);
+        if (rc){
+                printk(KERN_ALERT "RG_BBC0_IRQM cant be written.");
+        }
+
+        rc = __at86rf215_write(lp, RG_BBC0_PC, 0x56);
+        if (rc){
+                printk(KERN_ALERT "RC_BBC0_PC cant be written.");
+        }
+
+/*
+        rc = __at86rf215_read(lp, RG_BBC0_PC, &val);
+        if (rc){
+                printk(KERN_DEBUG "RG_BBC0_PC: Something went wrong while writing in config regs");
+                return rc;
+        }
+        printk(KERN_DEBUG "RG_BBC0_PC = %x", val);
+
+
+	val=0xff;
+        rc = at86rf215_read_subreg(lp, SG_BBC0_IRQM, &val);
+        if (rc){
+                printk(KERN_DEBUG "SG_BBC0_IRQM cant be read.");
+		printk(KERN_DEBUG "SG_BBC0_IRQM : %x", val);
+	}
+*/
 	/* TODO: Check if this is necessary */
 	/* CLKM changes are applied immediately
 	 * (In case there are CLKM clock rate modifications)*/
@@ -694,7 +931,7 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 	rc = __at86rf215_read(lp, RG_RF_VN, &version);
 	if (rc)
 		return rc;
-	/* printk(KERN_DEBUG "[Detecting]: AT86RF215 version: %x", version); */
+	printk(KERN_DEBUG "[Detecting]: AT86RF215 version: %x", version);
 
 	rc = __at86rf215_read(lp, RG_RF_PN, &part);
 	if (rc)
@@ -764,9 +1001,6 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 	/* Define the ED threshold + the transmitter power */
 	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
 	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
-
-	dev_info(&lp->spi->dev,
-		 "[Detecting]: Detected At86rf215 chip version %d\n", version);
 
 	return rc;
 }
@@ -857,19 +1091,27 @@ static int at86rf215_probe(struct spi_device *spi)
 		goto free_dev;
 	}
 
+/*        rc = __at86rf215_read(lp, RG_BBC0_IRQM, &val);
+        if (rc) {
+                printk(KERN_DEBUG "Error while READING RG_BBC0_IRQM register.");
+                return rc;
+        }
+
+*/
 	/* Read irq status register to reset irq line. */
 	rc = __at86rf215_read(lp, RG_RF09_IRQS, &status);
 	if (rc) {
 		printk(KERN_ALERT "read_subreg FAILED.");
 		goto free_dev;
 	}
-	else
-		printk(KERN_DEBUG "RG_RF09_IRQS = %x", status);
 
-	/* Enabling interrupts for Baseband Mode */
-	__at86rf215_write(lp, RG_RF09_IRQM, 0x1f);
-	__at86rf215_write(lp, RG_BBC0_IRQM, 0x1f);
-
+	/* TODO: This is a TEST ! It will be deleted later. */
+/*	printk(KERN_DEBUG "RG_RF09_IRQS = %x", status);
+	__at86rf215_read(lp, RG_RF09_CMD, &status);
+	printk(KERN_DEBUG "CURRENT STATE = %x ", status);
+        __at86rf215_read(lp, RG_RF09_IRQM, &status);
+        printk(KERN_DEBUG "RG_RF09_IRQM= %x ", status);
+*/
 	irq_type = irq_get_trigger_type(spi->irq);
 	if (!irq_type){
 		printk (KERN_DEBUG "Assigning an IRQ type to the IRQ line");
@@ -887,8 +1129,6 @@ static int at86rf215_probe(struct spi_device *spi)
 
 	/* disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
-	/* going into sleep by default */
-	/* TODO: Reach state TRXOFF */
 
 	rc = ieee802154_register_hw(lp->hw);
 	if (rc) {
@@ -896,9 +1136,17 @@ static int at86rf215_probe(struct spi_device *spi)
 		return rc;
 	}
 
-	at86rf215_read_subreg(lp, SR_RF09_TXCUTC_LPFCUT, &val);
-	printk(KERN_DEBUG "SR_RF09_TXCUTC_LPFCUT = %x", val);
 	printk(KERN_ALERT "Device REGISTRED !");
+
+	/* CAlling functions for TESTING! */
+
+/*	rc = at86rf215_tx(lp->hw);
+	if (rc){
+	        printk (KERN_DEBUG "Transmission FAILED!");
+		return rc;
+	}
+	printk (KERN_DEBUG "Transmission DONE!");
+*/
 	return rc;
 
 free_dev:
