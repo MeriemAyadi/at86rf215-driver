@@ -283,7 +283,7 @@
 
 // Radio mode : interruption registers
 #define RG_RF09_IRQM    (0x0100)         //The register RFn_IRQM contains the radio IRQ mask.
-#define SR_RF09_IRQM     0x0100, 0xff, 0
+//#define SR_RF09_IRQM     0x0100, 0xff, 0
 #define RG_RF09_IRQS    (0x0000)         //A bit set to 1 indicates that the corresponding IRQ has occurred.
 #define SR_IRQS_0_WAKEUP 0x0000, 0x01, 0 //Used when the procedure from state SLEEP/DEEP_SLEEP or power-up or RESET procedure is completed.
 #define SR_IRQS_1_TRXRDY 0x0000, 0x02, 1 //Used when the command TXPREP is written to the register RFn_CMD and transceiver reaches the state TXPREP.
@@ -301,7 +301,7 @@
 
 // Baseband mode : interruption registers
 #define RG_BBC0_IRQM    (0x0300)                   //BBC0_IRQS contains the baseband IRQ status
-#define SR_BBC0_IRQM     0x0300, 0xff, 0
+//#define SR_BBC0_IRQM     0x0300, 0xff, 0
 #define RG_BBC0_IRQS    (0x0002)
 #define SR_IRQS_0_RXFS   0x0002, 0x01, 0           //This interrupt is issued if a valid PHY header is detected during frame receive.
 #define SR_IRQS_1_RXFE   0x0002, 0x02, 1           //The IRQ RXFE is issued at the end of a successful frame reception.
@@ -354,9 +354,9 @@
 #define RG_RST (0x0005) //Resetting the entire device via an SPI command. To do that, write 0x07 to this register.
 
 /********* Clock Output ************/
-#define RF_CLKO    (0x0007)
-#define SR_CLKO_OS  0x0007, 0x07, 0 //It configures the clock output frequency of the CLKO output signal: 1 ==> 26 MHz , or 0 ofc.
-#define SR_CLKO_DRV 0x0007, 0x18, 3 //It configures the CLKO pad driver strength : 2 ==> 8 mA
+#define RG_RF_CLKO    (0x0007)
+#define SR_RF_CLKO_OS  0x0007, 0x07, 0 //It configures the clock output frequency of the CLKO output signal: 1 ==> 26 MHz , or 0 ofc.
+#define SR_RF_CLKO_DRV 0x0007, 0x18, 3 //It configures the CLKO pad driver strength : 2 ==> 8 mA
 
 
 /******** Serial I/Q Data Interface ********/
@@ -473,6 +473,7 @@
 //These will be defined later
 /** 10) MR-FSK PHY **/
 /** 11) MR-OFDM PHY **/
+#define RG_BBC0_OFDMPHRTX  (0x030C)
 /** 12) O-QPSK PHY **/
 /** 13) Frame Buffer **/
 #define RG_BBC0_TXFLL      (0x0306)
@@ -489,7 +490,8 @@
 /** 18) Timestamp Counter **/
 
 
-
+#define RG_RF24_IRQM      (0x0200)
+#define RG_EXAMPLE        (0x0117)
+#define RG_EXAMPLE2       (0X02000)
 #endif /* !_AT86RF230_H */
-
 

@@ -5,6 +5,7 @@
  * functions I am willing to uncomment/delete while making consistent progress
  * in the code. */
 
+#include <linux/unistd.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/hrtimer.h>
@@ -30,23 +31,33 @@
 struct at86rf215_platform_data {
 	int	rstn;
 };
-
 struct at86rf215_local;
 
 /* TODO: I couldnt't find the value of t_sleep_to_off in datasheet */
 /* TODO: The following transition times will be edited. */
 /* All timings are in us. */
 struct at86rf215_chip_data {
-	u16	t_sleep_cycle;
-	u16	t_channel_switch;
-	u16	t_reset_to_off;
-	u16	t_off_to_aack;
-	u16	t_off_to_tx_on;
-	u16	t_off_to_sleep;
-	u16	t_sleep_to_off;
-	u16	t_frame;
-	u16	t_p_ack;
-	int	rssi_base_val;
+
+        u16	t_power_to_off;
+        u16	t_sleep_to_off;
+        u16	t_dsleep_to_off;
+        u16	t_reset_to_off;
+        u16	t_off_to_prep;
+        u16	t_off_to_rx;
+        u16	t_prep_to_tx;
+        u16	t_tx_start_delay;
+        u16	t_prep_to_rx;
+        u16	t_prep_to_off;
+        u16	t_rx_to_off;
+        u16	t_rx_to_prep;
+        u16	t_txfe_to_prep;
+        u16	t_txprep_to_prep;
+        u16	t_tx_to_off;
+        u16	t_vreg_settl;
+        u16	t_xosc_settl;
+        u16	t_pll_ch_switch;
+        u16	t_rxfe;
+        int	rssi_base_val;
 
 	int	(*set_channel)(struct at86rf215_local *, u8, u8);
 	int	(*set_txpower)(struct at86rf215_local *, s32);
@@ -93,37 +104,19 @@ struct at86rf215_local {
 	struct at86rf215_state_change	tx;
 };
 
-/* TODO: For both following functions, should we check if we're in state SLEEP
- * and if so should we transit to state TRXOFF ?
- * Maybe they will be deleted and replaced directly by regmpap functions. */
-static inline int __at86rf215_write(struct at86rf215_local *lp,
-				    unsigned int addr, unsigned int data)
-{
-	return regmap_write(lp->regmap, addr, data);
-}
-
-static inline int __at86rf215_read(struct at86rf215_local *lp,
-				   unsigned int addr, unsigned int *data)
-{
-	return regmap_read(lp->regmap, addr, data);
-}
-
 static inline int at86rf215_read_subreg(struct at86rf215_local *lp,
 					unsigned int addr, unsigned int mask,
 					unsigned int shift, unsigned int *data)
 {
 	int rc;
 
-	rc = __at86rf215_read(lp, addr, data);
+	rc = regmap_read(lp->regmap, addr, data);
 	if (!rc)
 		*data = (*data & mask) >> shift;
 
 	return rc;
 }
 
-/* TODO: For the following functions, should we check if we're in state SLEEP
- * and if so should we transit to state TRXOFF ?
- */
 static inline int at86rf215_write_subreg(struct at86rf215_local *lp,
 					 unsigned int addr, unsigned int mask,
 					 unsigned int shift, unsigned int data)
@@ -131,10 +124,14 @@ static inline int at86rf215_write_subreg(struct at86rf215_local *lp,
 	return regmap_update_bits(lp->regmap, addr, mask, data << shift);
 }
 
-/* TODO: The following functions should be updated all along the module implemetation.*/
 static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 {
+	/* For BBC0_FBTXS registers */
+	if ( (reg & 0x2800) == 0x2800)
+		return true;
+
 	switch (reg) {
+	case RG_BBC0_FBTXS:
 	case RG_BBC0_OFDMPHRTX:
 	case RG_EXAMPLE:
 	case RG_EXAMPLE2:
@@ -217,7 +214,7 @@ static bool at86rf215_reg_precious(struct device *dev, unsigned int reg)
 	}
 }
 
-//#define AT86RF215_NUMREGS 0x12E
+/*#define AT86RF215_NUMREGS 0x12E*/
 #define AT86RF215_NUMREGS 0xFFFFFFFF
 static const struct regmap_config at86rf215_regmap_spi_config = {
 	.reg_bits		= 16,
@@ -258,8 +255,6 @@ static inline void at86rf215_async_error(struct at86rf215_local *	lp,
 					 struct at86rf215_state_change *ctx,
 					 int				rc)
 {
-	dev_err(&lp->spi->dev, "spi_async error %d\n", rc);
-
 	//at86rf215_async_state_change(lp, ctx, STATE_FORCE_TRX_OFF, at86rf215_async_error_recover);
 	/* TODO: What state should we reach whenever an error happens ?Ã*/
 	at86rf215_async_error_recover_complete(ctx);
@@ -269,10 +264,11 @@ static void at86rf215_async_write_reg(struct at86rf215_local *lp, u16 reg,
 			u8 val, struct at86rf215_state_change *ctx, void (*complete)(void *context))
 {
 	int rc;
+
 	ctx->buf[0] = ((reg & CMD_REG_MSB) >> 8) | CMD_WRITE;
 	ctx->buf[1] = reg & CMD_REG_LSB;
 	ctx->buf[2] = val;
-	//printk(KERN_DEBUG "buf[0]=%x buf[1]=%x buf[2]=%x",ctx->buf[0],ctx->buf[1],ctx->buf[2]);
+
 	ctx->msg.complete = complete;
 	rc = spi_async(lp->spi, &ctx->msg);
 	if (rc){
@@ -290,9 +286,8 @@ static void at86rf215_async_read_reg(struct at86rf215_local *lp, u16 reg,
 
 	tx_buf[0] = ((reg & CMD_REG_MSB) >> 8);
 	tx_buf[1] = reg & CMD_REG_LSB;
-	//printk(KERN_DEBUG "buf[0]=%x buf[1]=%x",ctx->buf[0],ctx->buf[1]);
-	ctx->msg.complete = complete;
 
+	ctx->msg.complete = complete;
 	rc = spi_async(lp->spi, &ctx->msg);
 	if (rc){
 		printk(KERN_DEBUG "spi_async failed in read_reg.");
@@ -300,8 +295,32 @@ static void at86rf215_async_read_reg(struct at86rf215_local *lp, u16 reg,
 	}
 }
 
-/* TODO: Implement this IMPORTANT function */
-static enum hrtimer_restart at86rf215_async_state_timer(struct hrtimer *timer){ return 0; }
+static void at86rf215_async_state_assert(void *context)
+{
+	struct at86rf215_state_change *ctx = context;
+	struct at86rf215_local *lp = ctx->lp;
+	const u8 *buf = ctx->buf;
+	const u8 trx_state = buf[2];
+
+	if (trx_state != ctx->to_state)
+		printk(KERN_ALERT "TIMEOUT: We couldn't move from state %x to state %x .", ctx->from_state, ctx->to_state);
+	else{
+		printk(KERN_DEBUG "We reached state: %x", trx_state);
+		ctx->from_state = ctx->to_state;
+	}
+}
+
+static enum hrtimer_restart at86rf215_async_state_timer(struct hrtimer *timer)
+{
+	struct at86rf215_state_change *ctx =
+		container_of(timer, struct at86rf215_state_change, timer);
+	struct at86rf215_local *lp = ctx->lp;
+
+	at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
+				 at86rf215_async_state_assert);
+
+	return HRTIMER_NORESTART;
+}
 
 static void at86rf215_tx_complete(void *context)
 {
@@ -394,20 +413,13 @@ static void at86rf215_irq_status(void *context)
 	int rc;
 	unsigned int state;
 	u8 val = buf[2];
-
 	enable_irq(lp->spi->irq);
 
-	/* Read the bits RXFE and TXFE to check if reception is completed. */
-	if ((val & IRQS_1_RXFE) || (val & IRQS_4_TXFE)) {
-		printk(KERN_DEBUG "Reception/Transmition completed !");
-		at86rf215_irq_trx_end(ctx);
-	} else if (val & IRQS_0_WAKEUP){
-		printk(KERN_DEBUG "WAKEUP INTERRUPTION");
-		at86rf215_irq_reset_end(ctx);
-	} else {
-		//printk(KERN_DEBUG "No irq received: %x ", val);
-		kfree(ctx);
+	if (val & IRQS_4_TXFE) {
+		printk(KERN_DEBUG "Transmition INTERRUPTION !");
 	}
+	else
+		kfree(ctx);
 }
 
 static void at86rf215_setup_spi_messages(struct at86rf215_local *	lp,
@@ -446,9 +458,10 @@ static irqreturn_t at86rf215_isr(int irq, void *data)
 
 	/* tell on error handling to free ctx*/
 	ctx->free = true;
+
 	/* Determine which IRQ has occurred : read the IRQ Status*/
-	ctx->buf[0] = (RG_RF09_IRQS & CMD_REG_MSB) >> 8;
-	ctx->buf[1] = RG_RF09_IRQS & CMD_REG_LSB;
+	ctx->buf[0] = (RG_BBC0_IRQS & CMD_REG_MSB) >> 8;
+	ctx->buf[1] = RG_BBC0_IRQS & CMD_REG_LSB;
 	ctx->msg.complete = at86rf215_irq_status;
 
 	rc = spi_async(lp->spi, &ctx->msg);
@@ -460,29 +473,145 @@ static irqreturn_t at86rf215_isr(int irq, void *data)
 	}
 
 	return IRQ_HANDLED;
+
+}
+
+static void at86rf215_async_state_delay(void *context)
+{
+	struct at86rf215_state_change *ctx = context;
+	struct at86rf215_local *lp = ctx->lp;
+	struct at86rf215_chip_data *c = lp->data;
+	bool force = false;
+	ktime_t tim;
+
+	switch (ctx->from_state) {
+	case STATE_RF_TRXOFF:
+		switch (ctx->to_state) {
+		case STATE_RF_TXPREP:
+			printk(KERN_DEBUG "async_state_delay: setting delay for TXPREP");
+			tim = c->t_off_to_prep * NSEC_PER_USEC;
+			goto change;
+		default:
+			break;
+		}
+	case STATE_RF_TXPREP:
+		switch (ctx->to_state) {
+                case STATE_RF_TX:
+                        printk(KERN_DEBUG "async_state_delay: setting delay for TX");
+                        tim = c->t_prep_to_tx;
+                        goto change;
+                default:
+                        break;
+                }
+
+
+	default:
+		break;
+	}
+change:
+	hrtimer_start(&ctx->timer, tim, HRTIMER_MODE_REL);
+}
+
+static void at86rf215_async_state_change_start(void *context)
+{
+	struct at86rf215_state_change *ctx = context;
+	struct at86rf215_local *lp = ctx->lp;
+	u8 *buf = ctx->buf;
+	const u8 trx_state = buf[2];
+
+	printk(KERN_DEBUG " async_state_change_start: actual state = %x", trx_state);
+
+	/* If we're in STATE_TRANSITION_IN_PROGRESS, keep reading until we move from this state. */
+	if (trx_state == STATE_TRANSITION_IN_PROGRESS) {
+		udelay(1);
+		at86rf215_async_read_reg(lp, RG_TRX_STATUS, ctx,
+					 at86rf215_async_state_change_start);
+		return;
+	}
+
+	/* Check if we already are in the state which we wanna change to. */
+	if (trx_state == ctx->to_state) {
+		if (ctx->complete)
+			ctx->complete(context);
+		return;
+	}
+
+	/* Set current state to the context of state change */
+	printk(KERN_DEBUG "we're moving from state %x to state: %x", ctx->from_state, ctx->to_state);
+	ctx->from_state = trx_state;
+
+	/* Going into the next step for a state change which do a timing
+	 * relevant delay. */
+	at86rf215_async_write_reg(lp, RG_RF09_CMD, ctx->to_state, ctx,
+				  at86rf215_async_state_delay);
+}
+
+static void
+at86rf215_async_state_change(struct at86rf215_local *lp,
+			     struct at86rf215_state_change *ctx,
+			     const u8 state, void (*complete)(void *context))
+{
+	/* Initialization for the state change context */
+	ctx->to_state = state;
+	printk(KERN_DEBUG "async_state_change: to->state = %x", ctx->to_state);
+	ctx->complete = complete;
+	at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
+				 at86rf215_async_state_change_start);
+}
+
+static void
+at86rf215_sync_state_change_complete(void *context)
+{
+	struct at86rf215_state_change *ctx = context;
+	struct at86rf215_local *lp = ctx->lp;
+	printk (KERN_DEBUG "at86rf215_sync_state_change_complete is called.");
+	complete(&lp->state_complete);
+}
+
+static int
+at86rf215_sync_state_change(struct at86rf215_local *lp, unsigned int state)
+{
+	unsigned long rc;
+
+	at86rf215_async_state_change(lp, &lp->state, state,
+				     at86rf215_sync_state_change_complete);
+
+	rc = wait_for_completion_timeout(&lp->state_complete,
+					 msecs_to_jiffies(100));
+	if (!rc) {
+		printk (KERN_DEBUG "at86rf215_sync_state_change: ERROR.");
+		at86rf215_async_error(lp, &lp->state, -ETIMEDOUT);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
 }
 
 /* TODO : The following function will be implemented. */
 static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb){return 0;}
-static int at86rf215_tx(struct ieee802154_hw *hw)
+
+static int at86rf215_tx(struct at86rf215_local *lp)
 {
-	struct at86rf215_local *lp = hw->priv;
-	unsigned int val, state, len_h, len_l,len = 0x7ff;
-	int rc, k, i=0;
+	unsigned int reg, k, val, status, len_h, len_l,len = 0x7ff;
+	int rc, i=0;
 	uint16_t offset =0;
 	uint8_t data;
+	struct at86rf215_chip_data *c = lp->data;
+	ktime_t tim;
+	struct at86rf215_state_change *state = &lp->state;
+
 
 	/* **** BABY STEPS **** */
 	/* Check if were in state TRXOFF */
-	rc = __at86rf215_read(lp, RG_RF09_STATE, &state);
+	rc = regmap_read(lp->regmap, RG_RF09_STATE, &status);
 	if (rc) {
 		printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
 		return rc;
 	}
 
-	if (state != RF_TRXOFF_STATUS){
-		printk (KERN_DEBUG "Switching from %x to TRXOFF_STATUS", state);
-		rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TRXOFF_STATUS);
+	if (status != RF_TRXOFF_STATUS){
+		printk (KERN_DEBUG "Switching from %x to TRXOFF_STATUS", status);
+		rc =regmap_write(lp->regmap, RG_RF09_CMD, RF_TRXOFF_STATUS);
 	        if (rc) {
         	        printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
                 	return rc;
@@ -492,7 +621,7 @@ static int at86rf215_tx(struct ieee802154_hw *hw)
 	/* Write frame length */
 	len_l = len & 0x00ff;
 	len_h = ((len & 0x0f00) >> 8);
-	rc = ( __at86rf215_write(lp, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
+	rc = (regmap_write(lp->regmap, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
 	if (rc){
 		printk(KERN_ALERT "Error while writing frame length");
 		return rc;
@@ -500,57 +629,25 @@ static int at86rf215_tx(struct ieee802154_hw *hw)
 
 	/* Enable FCS */
 	/* SR_BBC0_PC_TXAFCS already enabled via at86rf215_config */
+
 	/* Download the frame (Not from MAC, jsut random caracters) */
 	for (k=0; k<len; k++){
 		get_random_bytes(&data, sizeof(data));
-		__at86rf215_write(lp, RG_BBC0_FBTXS + offset, data);
+		reg = RG_BBC0_FBTXS + offset;
+		rc =regmap_write(lp->regmap, reg, data);
+		if (rc){
+			printk(KERN_ALERT " Impossible to write the complete frame !! Stopped at length : %x", k);
+			return rc;
+		}
 		offset ++;
 	}
 
-	/* Move to TXPREP state, transmission is possible ONLY from this state.*/
-/*	rc = __at86rf215_read(lp, RG_RF09_CMD, &state);
-        if (rc)
-                return rc;
-	if (state == RF_TRXOFF_STATUS){
-	        rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TXPREP_STATUS);
-		        if (rc) {
-                	printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
-                	return rc;
-                	}
-	}
-	else
-		return rc;
-*/
-	/* Wait until an interruption TRXRDY is triggered : read SR_IRQS_1_TRXRDY. (BC, boucle infinie) */
-/*        while (!(IRQS_1_TRXRDY) & (i<100)) { i++; }
-	if (i==100){
-		printk(KERN_DEBUG " NO IRS TRXRDY TRIGGERED !");
-		return rc;
-	}
-*/	/* Move to TX state, and write the frame */
-/*        if (state == RF_TXPREP_STATUS){
-                rc = __at86rf215_write(lp, RG_RF09_CMD, RF_TX_STATUS);
-                        if (rc) {
-                        printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
-                        return rc;
-                        }
-        }
-        else
-                return rc;
-*/
-	/* NB: When the frame transmission is completed, an interrupt TXFE is
-	 * trigered and state TXPREP is reached automatically. The at86rf215_isr
-	 * handler will be called and functions tx_complete, tx_on and
-	 * tx_trac_check will be modified. */
 
-/*õ	i =0;
-	while (!(IRQS_4_TXFE) & (i<10000)) { i++; }
-        if (i==10000){
-		printk(KERN_DEBUG " NO IRQ TXFE TRIGGERED !");
-                return rc;
-	}
-*/
-	return 0;
+	/* Move to TXPREP state, transmission is possible ONLY from this state.*/
+	state->from_state = STATE_RF_TRXOFF;
+	at86rf215_sync_state_change(lp,STATE_RF_TXPREP);
+	at86rf215_sync_state_change(lp,STATE_RF_TX);
+
 }
 
 /* TODO : What this does ? */
@@ -586,15 +683,15 @@ static int at86rf215_set_channel(struct at86rf215_local *lp, u8 page,
         /* Channel Center Frequency */
         /* cf_low = channel_freq & 0x00ff; */
         /* cf_high = ( channel_freq & 0xff00 ) >> 8; */
-        rc = (__at86rf215_write( lp, RG_RF09_CCF0L, cf_low) && __at86rf215_write( lp, RG_RF09_CCF0H, cf_high));
+        rc = (regmap_write( lp->regmap, RG_RF09_CCF0L, cf_low) && regmap_write( lp->regmap, RG_RF09_CCF0H, cf_high));
 	if (rc)
 		return rc;
         /* Channel Spacing */
-        rc = __at86rf215_write(lp, RG_RF09_CS, cs);
+        rc = regmap_write(lp->regmap, RG_RF09_CS, cs);
         if (rc)
                 return rc;
 	/* Channel Number */
-	rc = (__at86rf215_write(lp, RG_RF09_CNL, channel) && at86rf215_write_subreg(lp, SR_RF09_CNM_CNH, 0x0));
+	rc = (regmap_write(lp->regmap, RG_RF09_CNL, channel) && at86rf215_write_subreg(lp, SR_RF09_CNM_CNH, 0x0));
         if (rc)
                 return rc;
         /* Channel Mode 0 : IEEE compliant channel scheme */
@@ -623,8 +720,8 @@ static int at86rf215_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 
 	rc = lp->data->set_channel(lp, page, channel);
 	/* Wait for PLL */
-	usleep_range(lp->data->t_channel_switch,
-		     lp->data->t_channel_switch + 10);
+	usleep_range(lp->data->t_pll_ch_switch,
+		     lp->data->t_pll_ch_switch + 10);
 
 	lp->cal_timeout = jiffies + AT86RF215_CAL_LOOP_TIMEOUT;
 	return rc;
@@ -665,7 +762,7 @@ static int at86rf215_set_cca_ed_level(struct ieee802154_hw *hw, s32 mbm)
 
 	for (i = 0; i < hw->phy->supported.cca_ed_levels_size; i++)
 		if (hw->phy->supported.cca_ed_levels[i] == mbm)
-			return __at86rf215_write(lp, RG_BBC0_AMEDT, i);
+			return regmap_write(lp->regmap, RG_BBC0_AMEDT, i);
 
 	return -EINVAL;
 }
@@ -715,18 +812,26 @@ static const struct ieee802154_ops at86rf215_ops = {
 };
 
 /* Datasheet : page 189 (Transition time) */
-/* TODO: There are more transition times that maybe will be added later. */
 static struct at86rf215_chip_data at86rf215_data = {
-	.t_sleep_cycle		= 500,  /* from leaving P_ON state to clk available
-	                                 * (tDEEP_SLEEP_TRXOFF) */
-	.t_channel_switch	= 100,  /* Duration of channel switch within frequency band.
-	                                 * I chose the MAX. (tPLL_CH_SW) */
-	.t_reset_to_off		= 1,    /* tRESET_TRXOFF */
-	.t_off_to_aack		= 90,   /* tTRXOFF_TXPREP */
-	.t_off_to_tx_on		= 90,   /* tTRXOFF_RX */
-	.t_sleep_to_off		= 1,    /* tSLEEP_TRXOFF */
-	.t_frame		= 4096, /* ? */
-	.t_p_ack		= 545,
+	.t_power_to_off	        = 500,
+	.t_sleep_to_off         = 1,
+	.t_dsleep_to_off        = 500,
+	.t_reset_to_off         = 1,
+        .t_off_to_prep          = 200,
+	.t_off_to_rx            = 90,
+	.t_prep_to_tx           = 200,
+	.t_tx_start_delay       = 4,
+	.t_prep_to_rx           = 200,
+	.t_prep_to_off          = 200,
+	.t_rx_to_off            = 200,
+	.t_rx_to_prep           = 200,
+	.t_txfe_to_prep		= 200, /*Transition time from TX (IRQ TXFE) to state TXPREP.*/
+	.t_txprep_to_prep	= 33,  /*Transition time from TX (SPI command CMD=TXPREP) to state TXPREP.*/
+	.t_tx_to_off            = 200, /*Transition time from TX (SPI command CMD=TRXOFF) to state TRXOFF.*/
+	.t_vreg_settl		= 35,  /*Settling time of AVDD or DVDD voltage regulator. */
+	.t_xosc_settl		= 150, /*Settling time of the crystal oscillator.*/
+	.t_pll_ch_switch	= 100, /*Frequency channel switch time (PLL) in state TXPREP.*/
+	.t_rxfe			= 100, /*IRQ RXFE processing delay relative to frame end; typical time depends on specific PHY mode.*/
 	.rssi_base_val		= -117,
 	.set_channel		= at86rf215_set_channel,
 	.set_txpower		= at86rf2xx_set_txpower,
@@ -737,8 +842,9 @@ static int at86rf215_hw_init(struct at86rf215_local *lp)
 	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH; /* Could be IRQ_ACTIVE_LOW */
 	unsigned int val;
 
+	/* TODO: THis should be replaced with an async function. */
 	/* Check if we're in state TRXOFF */
-	rc = __at86rf215_read(lp, RG_RF09_STATE, &val);
+	rc = regmap_read(lp->regmap, RG_RF09_STATE, &val);
 	if ((rc) || (val != RF_TRXOFF_STATUS)) {
 		printk(KERN_DEBUG "Hardware Initialisation: FAILED!");
 		return rc;
@@ -765,78 +871,78 @@ static int at86rf215_config(struct at86rf215_local *lp)
  *      if (rc)
  *              return rc;
  */
-        rc = __at86rf215_read(lp, RG_RF09_STATE, &status);
+        rc = regmap_read(lp->regmap, RG_RF09_STATE, &status);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_STATE:Something went wrong while writing in config regs");
                 return rc;
         }
 	printk(KERN_DEBUG "RG_RF09_STATE = %x", status);
-        rc = __at86rf215_write(lp, RG_RF09_IRQM, 0x1F);
+        rc = regmap_write(lp->regmap, RG_RF09_IRQM, 0x1F);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_IRQM:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_CCF0L, 0x20);
+        rc = regmap_write(lp->regmap, RG_RF09_CCF0L, 0x20);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CCF0L:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_CCF0H, 0x8D);
+        rc = regmap_write(lp->regmap, RG_RF09_CCF0H, 0x8D);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CCF0H:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_CS, 0x30);
+        rc = regmap_write(lp->regmap, RG_RF09_CS, 0x30);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CS:Something went wrong while writing in config regs");
                 return rc;
 	}
-        rc = __at86rf215_write(lp, RG_RF09_CNL, 0x03);
+        rc = regmap_write(lp->regmap, RG_RF09_CNL, 0x03);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CNL:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_RXBWC, 0x09);
+        rc = regmap_write(lp->regmap, RG_RF09_RXBWC, 0x09);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_RXBWC:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_RXDFE, 0x83);
+        rc = regmap_write(lp->regmap, RG_RF09_RXDFE, 0x83);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_RXDFE:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_EDD, 0x7A);
+        rc = regmap_write(lp->regmap, RG_RF09_EDD, 0x7A);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_EDD:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_TXCUTC, 0x0B);
+        rc = regmap_write(lp->regmap, RG_RF09_TXCUTC, 0x0B);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_TXCUTC:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_TXDFE, 0x83);
+        rc = regmap_write(lp->regmap, RG_RF09_TXDFE, 0x83);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_TXDFE:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = __at86rf215_write(lp, RG_RF09_PAC, 0x7C);
+        rc = regmap_write(lp->regmap, RG_RF09_PAC, 0x7C);
 
 	if (rc){
 		printk(KERN_DEBUG "RG_RF09_PAC:Something went wrong while writing in config regs");
 		return rc;
 	}
-        rc = __at86rf215_write(lp, RG_BBC0_IRQM, 0x1f);
+        rc = regmap_write(lp->regmap, RG_BBC0_IRQM, 0x1f);
         if (rc){
                 printk(KERN_ALERT "RG_BBC0_IRQM cant be written.");
         }
-        rc = __at86rf215_write(lp, RG_BBC0_PC, 0x56);
+        rc = regmap_write(lp->regmap, RG_BBC0_PC, 0x56);
         if (rc){
                 printk(KERN_ALERT "RG_BBC0_PC cant be written.");
 		return rc;
         }
-        rc = __at86rf215_write(lp, RG_BBC0_OFDMPHRTX,0x03);
+        rc = regmap_write(lp->regmap, RG_BBC0_OFDMPHRTX,0x03);
         if (rc){
                 printk(KERN_ALERT "RG_BBC0_OFDMPHRTX cant be written.");
 		return rc;
@@ -887,12 +993,12 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 
 	pr_info("[Detecting]: detect_device function is being called ..\n");
 
-	rc = __at86rf215_read(lp, RG_RF_VN, &version);
+	rc = regmap_read(lp->regmap, RG_RF_VN, &version);
 	if (rc)
 		return rc;
 	printk(KERN_DEBUG "[Detecting]: AT86RF215 version: %x", version);
 
-	rc = __at86rf215_read(lp, RG_RF_PN, &part);
+	rc = regmap_read(lp->regmap, RG_RF_PN, &part);
 	if (rc)
 		return rc;
 	/* printk (KERN_DEBUG "[Detecting]: AT86RF215 part number: %x", part); */
@@ -1060,6 +1166,7 @@ static int at86rf215_probe(struct spi_device *spi)
 	 * lp: is passed as an argument to at86rf215_isr */
 	rc = devm_request_irq(&spi->dev, spi->irq, at86rf215_isr,
 			      IRQF_SHARED | irq_type, dev_name(&spi->dev), lp);
+
 	if (rc) {
 		printk(KERN_ALERT "devm_request_irq FAILED.");
 		goto free_dev;
@@ -1076,7 +1183,7 @@ static int at86rf215_probe(struct spi_device *spi)
 	printk(KERN_ALERT "Device REGISTRED !");
 
 	/* Tranceiver reset */
-	/*TODO: Why this reset do NOT reset the registers values ?*/
+	/*TODO: Why this reset do NOT reset the registers values ? MAybe ==> async ? */
         /* Read irq status register to reset irq line. */
 /*        rc = __at86rf215_read(lp, RG_RF09_IRQS, &status);
         if (rc) {
@@ -1099,8 +1206,9 @@ static int at86rf215_probe(struct spi_device *spi)
                 printk(KERN_ALERT "at86rf215_config FAILED.");
                 goto free_dev;
         }
-
-	at86rf215_tx(hw);
+	enable_irq(lp->spi->irq);
+	at86rf215_tx(lp);
+	disable_irq(lp->spi->irq);
 	return rc;
 
 free_dev:
@@ -1117,8 +1225,7 @@ static int at86rf215_remove(struct spi_device *spi)
 	struct at86rf215_local *lp = spi_get_drvdata(spi);
 
 	pr_info("[Removing]: AT86RF215 remove function is called ..\n");
-	/* mask all at86rf215 irq's */
-	//__at86rf215_write(lp, RG_RF09_IRQM, 0x0000);
+	regmap_write(lp->regmap, RG_RF09_IRQM, 0x0000);
 	ieee802154_unregister_hw(lp->hw);
 	ieee802154_free_hw(lp->hw);
 	dev_dbg(&spi->dev, "unregistered at86rf215\n");
