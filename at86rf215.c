@@ -368,16 +368,6 @@ static void at86rf215_irq_reset_end( void *context)
 	}
 }
 
-/*static void at86rf215_irq_tx_end(void *context)
-{
-        struct at86rf215_state_change *ctx = context;
-        struct at86rf215_local *lp = ctx->lp;
-
-	ctx->to_state =STATE_RF_TXPREP;
-	at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
-                                 at86rf215_async_state_change_start);
-}
-*/
 static void at86rf215_irq_status(void *context)
 {
 	struct at86rf215_state_change *ctx = context;
@@ -386,12 +376,13 @@ static void at86rf215_irq_status(void *context)
 	int rc;
 	unsigned int state;
 	u8 val = buf[2];
+
 	enable_irq(lp->spi->irq);
-	printk(KERN_DEBUG "COUUUUUUUUUUUUUUUUUCOU : %x ", val);
-//	if (val & IRQS_4_TXFE) {
-	if (val){
-		printk(KERN_DEBUG "TRANSMISSION INTERRUPTION !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+	if (val & IRQS_4_TXFE) {
+		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
 //		at86rf215_irq_tx_end(ctx);
+		disable_irq(lp->spi->irq);
 	}
 	else
 		kfree(ctx);
@@ -513,12 +504,20 @@ static void at86rf215_async_state_change_start(void *context)
 
 	/* If we're in STATE_TRANSITION_IN_PROGRESS, keep reading until we move from this state. */
 	if (trx_state == STATE_RF_TRANSITION) {
-		printk (KERN_DEBUG " trx_state == 1 or 6 ");
+		printk (KERN_DEBUG "We're in a transition state.");
 		at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
 					 at86rf215_async_state_change_start);
 		return;
 	}
 
+/*	if ((trx_state == STATE_RF_TX) & ( ctx->to_state == STATE_RF_TXPREP)) {
+		printk (KERN_DEBUG "We're in still in TX state, the transmission is not done yet");
+		at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
+                                         at86rf215_async_state_change_start);
+                udelay(1);
+		return;
+	}
+*/
 	/* Check if we already are in the state which we wanna change to. */
 	if (trx_state == ctx->to_state) {
 		if (ctx->complete){
@@ -528,6 +527,8 @@ static void at86rf215_async_state_change_start(void *context)
 		return;
 	}
 
+	if (!(ctx->from_state))
+		ctx->from_state = STATE_RF_TRXOFF;
 	/* Set current state to the context of state change */
 	printk(KERN_DEBUG "we're moving from state %x to state: %x", ctx->from_state, ctx->to_state);
 	ctx->from_state = trx_state;
@@ -572,7 +573,7 @@ at86rf215_sync_state_change(struct at86rf215_local *lp, unsigned int state)
 	printk (KERN_DEBUG "waiting for completion timeout");
 	/* TODO : the jiffies value might change. */
 	rc = wait_for_completion_timeout(&lp->state_complete,
-					 msecs_to_jiffies(1000));
+					 msecs_to_jiffies(100));
 	if (!rc) {
 		printk (KERN_DEBUG "at86rf215_sync_state_change: ERROR.");
 		at86rf215_async_error(lp, &lp->state, -ETIMEDOUT);
@@ -630,10 +631,9 @@ static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 	unsigned int reg, k, val, status, len_h, len_l,len = 0x7ff;
 
 	lp->tx_skb = skb;
-	lp->tx_retry = 0;
+//	lp->tx_retry = 0;
 
-	ctx->from_state = STATE_RF_TRXOFF;
-
+	printk(KERN_DEBUG "We're in _xmit function");
 	at86rf215_async_state_change(lp, ctx, RF_TXPREP_STATUS, at86rf215_write);
 
 	return 0;
@@ -659,8 +659,16 @@ static int at86rf215_start(struct ieee802154_hw *hw)
 static void at86rf215_stop(struct ieee802154_hw *hw)
 {
 	struct at86rf215_local *lp = hw->priv;
-//	disable_irq(lp->spi->irq);
-	printk(KERN_DEBUG "_stop is being called");
+	unsigned int val;
+	int rc;
+
+	disable_irq(lp->spi->irq);
+/*	regmap_read(lp->regmap, RG_RF09_STATE, &val);
+	if (rc)
+		printk(KERN_DEBUG "_stop : couldnt read RG_RF09_STATE");
+	else
+		printk(KERN_DEBUG "_stop : RG_RF09_STATE = %x", val);
+*/	printk(KERN_DEBUG "_stop is being called");
 }
 
 /* TODO:
@@ -882,18 +890,13 @@ static int at86rf215_config(struct at86rf215_local *lp)
  *      if (rc)
  *              return rc;
  */
-        rc = regmap_read(lp->regmap, RG_RF09_STATE, &status);
-        if (rc){
-                printk(KERN_DEBUG "RG_RF09_STATE:Something went wrong while writing in config regs");
-                return rc;
-        }
-	printk(KERN_DEBUG "RG_RF09_STATE = %x", status);
+
         rc = regmap_write(lp->regmap, RG_RF09_IRQM, 0x1F);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_IRQM:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = regmap_write(lp->regmap, RG_RF09_CCF0L, 0x20);
+/*        rc = regmap_write(lp->regmap, RG_RF09_CCF0L, 0x20);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CCF0L:Something went wrong while writing in config regs");
                 return rc;
@@ -913,7 +916,7 @@ static int at86rf215_config(struct at86rf215_local *lp)
                 printk(KERN_DEBUG "RG_RF09_CNL:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = regmap_write(lp->regmap, RG_RF09_RXBWC, 0x09);
+*/        rc = regmap_write(lp->regmap, RG_RF09_RXBWC, 0x09);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_RXBWC:Something went wrong while writing in config regs");
                 return rc;
@@ -1178,64 +1181,32 @@ static int at86rf215_probe(struct spi_device *spi)
 	}
 	printk(KERN_DEBUG "Device REGISTRED !");
 
-	/* Tranceiver reset */
-	/*TODO: Why this reset do NOT reset the registers values ? MAybe ==> async ? */
-        /* Read irq status register to reset irq line. */
-/*        rc = __at86rf215_read(lp, RG_RF09_IRQS, &status);
-        if (rc) {
-                printk(KERN_ALERT "read_subreg FAILED.");
-                goto free_dev;
-        }
-	printk(KERN_DEBUG "Moving to reset state.");
-	enable_irq(lp->spi->irq);
-	rc = __at86rf215_write(lp, RG_RF09_CMD, RF_RESET_STATUS);
-	disable_irq(lp->spi->irq);
-        if (rc) {
-                printk(KERN_ALERT "RESET STATE change FAILED.");
-                goto free_dev;
-        }
-*/
-	/*End of tranceiver reset*/
-/*µ
+
 	rc = at86rf215_config(lp);
 	if (rc){
                 printk(KERN_ALERT "at86rf215_config FAILED.");
                 goto free_dev;
         }
-*/
+
 //        irq= in_interrupt();
 //        printk(KERN_ALERT "==> INTERRUPTION CONTEXT: %x", irq);
-
-
-
-
-
 
 	rc = regmap_read(lp->regmap, RG_RF09_STATE, &status);
         if (rc) {
                 printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
                 return rc;
         }
-
         printk(KERN_DEBUG "RG_RF09_STATE = %x", status);
-
-
         if (status != RF_TRXOFF_STATUS){
-                printk (KERN_DEBUG "Switching from %x to TRXOFF_STATUS", status);
-                at86rf215_sync_state_change(lp,STATE_RF_TRXOFF);
+                printk (KERN_DEBUG "The radio is OFF", status);
         }
-//        else
-//              state->from_state = STATE_RF_TRXOFF;
 
-//        len_l = len & 0x00ff;
-//      len_h = ((len & 0x0f00) >> 8);
-/*        rc = (regmap_write(lp->regmap, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
+	/* Set the frame length. */
+        rc = (regmap_write(lp->regmap, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
         if (rc){
                 printk(KERN_ALERT "Error while writing frame length");
                 return rc;
         }
-*/
-
 
 	return rc;
 
