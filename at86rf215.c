@@ -1,3 +1,4 @@
+
 /* NOTES:
  * 1) The comments that do not respect the code width ( 80 caracters per line )
  * are going to be deleted soon.
@@ -158,6 +159,7 @@ static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 	case RG_RF09_CCF0H:
 	case RG_RF09_CS:
 	case RG_RF09_CNL:
+	case RG_RF09_CNM:
 	case RG_RF09_RXBWC:
 	case RG_RF09_RXDFE:
 	case RG_RF09_EDD:
@@ -165,6 +167,9 @@ static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 	case RG_RF09_TXDFE:
 	case RG_RF09_PAC:
 	case RG_IQIFC1:
+	case RG_RF09_EDC:
+	case RG_BBC0_AFFTM:
+	case RG_BBC0_PS:
 		return true;
 	default:
 		return false;
@@ -325,6 +330,7 @@ static enum hrtimer_restart at86rf215_async_state_timer(struct hrtimer *timer)
 		container_of(timer, struct at86rf215_state_change, timer);
 	struct at86rf215_local *lp = ctx->lp;
 
+	printk(KERN_DEBUG "at86rf215_async_state_timer : calling state_assert");
 	at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
 				 at86rf215_async_state_assert);
 
@@ -378,12 +384,16 @@ static void at86rf215_irq_status(void *context)
 	u8 val = buf[2];
 
 	enable_irq(lp->spi->irq);
-
 	if (val & IRQS_4_TXFE) {
 		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
-//		at86rf215_irq_tx_end(ctx);
+//		disable_irq(lp->spi->irq);
+	}
+	else if (val & IRQS_0_RXFS) {
+		printk(KERN_DEBUG "A valid frame header is decoded !");
 		disable_irq(lp->spi->irq);
 	}
+	else if (val)
+		printk(KERN_DEBUG "An INTERRUPTION HAS OCCURED !!!!");
 	else
 		kfree(ctx);
 }
@@ -457,6 +467,10 @@ static void at86rf215_async_state_delay(void *context)
 			printk(KERN_DEBUG "async_state_delay: setting delay for TRXOFF ==> TXPREP");
 			tim = c->t_off_to_prep * NSEC_PER_USEC;
 			goto change;
+		case STATE_RF_RX:
+			printk(KERN_DEBUG "async_state_delay: setting delay for TRXOFF ==> RX");
+			tim = c->t_off_to_rx * NSEC_PER_USEC;
+			goto change;
 		default:
 			break;
 		}
@@ -522,13 +536,14 @@ static void at86rf215_async_state_change_start(void *context)
 	if (trx_state == ctx->to_state) {
 		if (ctx->complete){
 			printk(KERN_DEBUG "trx_state == ctx->to_stat");
+			ctx->from_state = trx_state;
 			ctx->complete(context);
 		}
 		return;
 	}
 
 	if (!(ctx->from_state))
-		ctx->from_state = STATE_RF_TRXOFF;
+		ctx->from_state = trx_state;
 	/* Set current state to the context of state change */
 	printk(KERN_DEBUG "we're moving from state %x to state: %x", ctx->from_state, ctx->to_state);
 	ctx->from_state = trx_state;
@@ -573,7 +588,7 @@ at86rf215_sync_state_change(struct at86rf215_local *lp, unsigned int state)
 	printk (KERN_DEBUG "waiting for completion timeout");
 	/* TODO : the jiffies value might change. */
 	rc = wait_for_completion_timeout(&lp->state_complete,
-					 msecs_to_jiffies(100));
+					 msecs_to_jiffies(500));
 	if (!rc) {
 		printk (KERN_DEBUG "at86rf215_sync_state_change: ERROR.");
 		at86rf215_async_error(lp, &lp->state, -ETIMEDOUT);
@@ -602,18 +617,18 @@ static void at86rf215_write(void *context)
         struct sk_buff *skb = lp->tx_skb;
         u8 *buf = ctx->buf;
         int rc, irq;
-        unsigned int reg, k, val, status, len_h, len_l,len = 0x7ff;
 
         lp->tx_skb = skb;
-        lp->tx_retry = 0;
 
         buf[0] = ((RG_BBC0_FBTXS & CMD_REG_MSB) >> 8) | CMD_WRITE;
         buf[1] = RG_BBC0_FBTXS & CMD_REG_LSB;
         memcpy(buf + 2, skb->data, skb->len);
         ctx->trx.len = skb->len + 2;
+	printk(KERN_ALERT "==> THE BUFFER LENGTH IS : %d", skb->len);
         ctx->msg.complete = at86rf215_write_frame_complete;
         rc = spi_async(lp->spi, &ctx->msg);
         if (rc) {
+		printk(KERN_ALERT "Impossible to write in BBC0_FBTXS registers");
                 ctx->trx.len = 2;
                 at86rf215_async_error(lp, ctx, rc);
         }
@@ -625,21 +640,21 @@ static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 	struct at86rf215_local *lp = hw->priv;
 	struct at86rf215_state_change *ctx = &lp->tx;
 	struct at86rf215_state_change *state = &lp->state;
+	const void *buf;
+	unsigned int x = 0x0123456789abcdef;
 
-	u8 *buf = ctx->buf;
-	int rc, irq;
-	unsigned int reg, k, val, status, len_h, len_l,len = 0x7ff;
-
+	buf = skb->data;
 	lp->tx_skb = skb;
-//	lp->tx_retry = 0;
 
 	printk(KERN_DEBUG "We're in _xmit function");
+	/*Debugging*/
+	print_hex_dump(KERN_ALERT, "mem: ", DUMP_PREFIX_ADDRESS, 16, 1, buf, skb->len, 0);
 	at86rf215_async_state_change(lp, ctx, RF_TXPREP_STATUS, at86rf215_write);
+
 
 	return 0;
 }
 
-/* TODO : What this does ? */
 static int at86rf215_ed(struct ieee802154_hw *hw, u8 *level)
 {
 	printk(KERN_DEBUG "_ed is being called");
@@ -656,19 +671,73 @@ static int at86rf215_start(struct ieee802154_hw *hw)
 	enable_irq(lp->spi->irq);
 	return 0;
 }
+
 static void at86rf215_stop(struct ieee802154_hw *hw)
 {
 	struct at86rf215_local *lp = hw->priv;
-	unsigned int val;
-	int rc;
+	unsigned int val, reg;
+	int rc, i;
+
+	reg= 0x2800;
+
+/* BBC0_PC_CTX register must be set to 0 to stop the continuous transmission.*/
+/*        rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX,  0x0);
+        if (rc)
+                printk(KERN_ALERT "Impossible to ecrire SR_BBC0_PC_CTX");
+        else
+                printk(KERN_ALERT "SR_BBC0_PC_CTX, DONE.", val);
+*/
+
+	/*Debugging*/
+
+/*	for ( i=0; i < 100; i++){
+		rc= regmap_read(lp->regmap, reg, &val);
+		reg = reg +1;
+	        if (rc)
+        	        printk(KERN_DEBUG "_stop : couldnt read BBC0_FBTXS");
+	        else
+        	        printk(KERN_DEBUG "_stop : BBC0_FBTXS = %x", val);
+	}
+*/
+        rc = regmap_read(lp->regmap, RG_BBC0_PS,  &val);
+        if (rc)
+                printk(KERN_ALERT "Impossible to lire le registre");
+        else
+                printk(KERN_ALERT "RG_BBC0_PS  = %x", val);
+
+        rc = at86rf215_read_subreg(lp, SR_BBC0_PC_CTX,  &val);
+        if (rc)
+                printk(KERN_ALERT "Impossible to lire le registre");
+	else
+	        printk(KERN_ALERT "SR_BBC0_PC_CTX  = %x", val);
+
+        rc = at86rf215_read_subreg(lp, SR_BBC0_PC_PT,  &val);
+        if (rc)
+	        printk(KERN_ALERT "Impossible to lire le registre");
+        else
+                printk(KERN_ALERT "SR_BBC0_PC_PT  = %x", val);
+
+        rc = at86rf215_read_subreg(lp, SR_IQIFC1_CHPM,  &val);
+        if (rc)
+                printk(KERN_ALERT "Impossible to lire le registre");
+        else
+                printk(KERN_ALERT "SR_IQIFC1_CHPM = %x", val);
+
+        rc = at86rf215_read_subreg(lp, SR_RF09_PAC_TXPWR,  &val);
+        if (rc)
+                printk(KERN_ALERT "Impossible to lire le registre");
+        else
+                printk(KERN_ALERT "SR_RF09_PAC_TXPWR = %x", val);
+
+        rc= regmap_read(lp->regmap, RG_RF09_STATE, &val);
+        if (rc)
+                printk(KERN_DEBUG "_stop : couldnt read RG_RF09_STATE");
+        else
+                printk(KERN_DEBUG "_stop : We are in state :  %x", val);
+
+        printk(KERN_DEBUG "_stop is being called");
 
 	disable_irq(lp->spi->irq);
-/*	regmap_read(lp->regmap, RG_RF09_STATE, &val);
-	if (rc)
-		printk(KERN_DEBUG "_stop : couldnt read RG_RF09_STATE");
-	else
-		printk(KERN_DEBUG "_stop : RG_RF09_STATE = %x", val);
-*/	printk(KERN_DEBUG "_stop is being called");
 }
 
 /* TODO:
@@ -703,9 +772,9 @@ static int at86rf215_set_channel(struct at86rf215_local *lp, u8 page,
 	}
 
 	/* Channel Number */
-	rc = (regmap_write(lp->regmap, RG_RF09_CNL, channel) && at86rf215_write_subreg(lp, SR_RF09_CNM_CNH, 0x0));
+/*	rc = (regmap_write(lp->regmap, RG_RF09_CNL, channel) || at86rf215_write_subreg(lp, SR_RF09_CNM_CNH, 0x0));
         if (rc){
-		printk(KERN_DEBUG "SR_RF09_CNL can't be set");
+		printk(KERN_DEBUG "RG_RF09_CNL or SR_RF09_CNM_CNH can't be set");
                 return rc;
 	}
 
@@ -716,7 +785,20 @@ static int at86rf215_set_channel(struct at86rf215_local *lp, u8 page,
                 return rc;
 	}
 */
-	return rc;
+
+/*        rc = at86rf215_write_subreg(lp, SR_RF09_CNM_CNH, 0x0);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CNM can't be set");
+                return rc;
+        }
+*/
+
+        rc = regmap_write(lp->regmap, RG_RF09_CNM, 0x00);
+        if (rc){
+                printk(KERN_ALERT "RG_RF09_CNM cant be written.");
+        }
+
+	return 0;
 }
 
 #define AT86RF215_MAX_ED_LEVELS 0xF /* 16 registers */
@@ -832,25 +914,25 @@ static const struct ieee802154_ops at86rf215_ops = {
 
 /* Datasheet : page 189 (Transition time) */
 static struct at86rf215_chip_data at86rf215_data = {
-	.t_power_to_off	        = 500,
-	.t_sleep_to_off         = 1,
-	.t_dsleep_to_off        = 500,
-	.t_reset_to_off         = 1,
-        .t_off_to_prep          = 200,
-	.t_off_to_rx            = 90,
-	.t_prep_to_tx           = 200,
-	.t_tx_start_delay       = 4,
-	.t_prep_to_rx           = 200,
-	.t_prep_to_off          = 200,
-	.t_rx_to_off            = 200,
-	.t_rx_to_prep           = 200,
-	.t_txfe_to_prep		= 200, /*Transition time from TX (IRQ TXFE) to state TXPREP.*/
-	.t_txprep_to_prep	= 33,  /*Transition time from TX (SPI command CMD=TXPREP) to state TXPREP.*/
-	.t_tx_to_off            = 200, /*Transition time from TX (SPI command CMD=TRXOFF) to state TRXOFF.*/
-	.t_vreg_settl		= 35,  /*Settling time of AVDD or DVDD voltage regulator. */
-	.t_xosc_settl		= 150, /*Settling time of the crystal oscillator.*/
-	.t_pll_ch_switch	= 100, /*Frequency channel switch time (PLL) in state TXPREP.*/
-	.t_rxfe			= 100, /*IRQ RXFE processing delay relative to frame end; typical time depends on specific PHY mode.*/
+	.t_power_to_off	        = 500, /*us*/
+	.t_sleep_to_off         = 1, /*us*/
+	.t_dsleep_to_off        = 500, /*us*/
+	.t_reset_to_off         = 1, /*us*/
+        .t_off_to_prep          = 200, /*us*/
+	.t_off_to_rx            = 90, /*us*/
+	.t_prep_to_tx           = 200, /*ns*/
+	.t_tx_start_delay       = 4, /*us*/
+	.t_prep_to_rx           = 200, /*ns*/
+	.t_prep_to_off          = 200, /*ns*/
+	.t_rx_to_off            = 200, /*ns*/
+	.t_rx_to_prep           = 200, /*ns*/
+	.t_txfe_to_prep		= 200, /*ns*/ /*Transition time from TX (IRQ TXFE) to state TXPREP.*/
+	.t_txprep_to_prep	= 33, /*us*/ /*Transition time from TX (SPI command CMD=TXPREP) to state TXPREP.*/
+	.t_tx_to_off            = 200, /*ns */ /*Transition time from TX (SPI command CMD=TRXOFF) to state TRXOFF.*/
+	.t_vreg_settl		= 35, /*us*/ /*Settling time of AVDD or DVDD voltage regulator. */
+	.t_xosc_settl		= 150, /*us*/ /*Settling time of the crystal oscillator.*/
+	.t_pll_ch_switch	= 100, /*us*/ /*Frequency channel switch time (PLL) in state TXPREP.*/
+	.t_rxfe			= 100, /*us*/ /*IRQ RXFE processing delay relative to frame end; typical time depends on specific PHY mode.*/
 	.rssi_base_val		= -117,
 	.set_channel		= at86rf215_set_channel,
 	.set_txpower		= at86rf2xx_set_txpower,
@@ -883,7 +965,7 @@ static int at86rf215_hw_init(struct at86rf215_local *lp)
 static int at86rf215_config(struct at86rf215_local *lp)
 {
 	int rc;
-	unsigned int status;
+	unsigned int status, val;
 
 	/* TODO: Check what this does. */
 /*      rc = at86rf215_write_subreg(lp, SR_RX_SAFE_MODE, 1);
@@ -896,7 +978,12 @@ static int at86rf215_config(struct at86rf215_local *lp)
                 printk(KERN_DEBUG "RG_RF09_IRQM:Something went wrong while writing in config regs");
                 return rc;
         }
-/*        rc = regmap_write(lp->regmap, RG_RF09_CCF0L, 0x20);
+	rc = regmap_write(lp->regmap, RG_RF09_CS, 0x30);
+        if (rc){
+                printk(KERN_DEBUG "RG_RF09_CS:Something went wrong while writing in config regs");
+                return rc;
+        }
+        rc = regmap_write(lp->regmap, RG_RF09_CCF0L, 0x20);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CCF0L:Something went wrong while writing in config regs");
                 return rc;
@@ -906,17 +993,12 @@ static int at86rf215_config(struct at86rf215_local *lp)
                 printk(KERN_DEBUG "RG_RF09_CCF0H:Something went wrong while writing in config regs");
                 return rc;
         }
-        rc = regmap_write(lp->regmap, RG_RF09_CS, 0x30);
-        if (rc){
-                printk(KERN_DEBUG "RG_RF09_CS:Something went wrong while writing in config regs");
-                return rc;
-	}
         rc = regmap_write(lp->regmap, RG_RF09_CNL, 0x03);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_CNL:Something went wrong while writing in config regs");
                 return rc;
         }
-*/        rc = regmap_write(lp->regmap, RG_RF09_RXBWC, 0x09);
+        rc = regmap_write(lp->regmap, RG_RF09_RXBWC, 0x09);
         if (rc){
                 printk(KERN_DEBUG "RG_RF09_RXBWC:Something went wrong while writing in config regs");
                 return rc;
@@ -961,6 +1043,18 @@ static int at86rf215_config(struct at86rf215_local *lp)
                 printk(KERN_ALERT "RG_BBC0_OFDMPHRTX cant be written.");
 		return rc;
         }
+        rc = regmap_write(lp->regmap, RG_RF09_CNM,0x00);
+        if (rc){
+                printk(KERN_ALERT "RG_RF09_CNM cant be written.");
+                return rc;
+        }
+
+        rc = regmap_read(lp->regmap, RG_RF09_EDC, &val);
+        if (rc){
+                printk(KERN_ALERT "RG_RF09_EDC cant be read.");
+                return rc;
+        }
+	printk(KERN_ALERT "RG_RF09_EDC = %x", val);
 
 	return rc;
 }
@@ -1051,20 +1145,20 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 	lp->hw->phy->supported.channels[2] |= 0x7fe;
 
 	/* Select page and channel by default. */
-	lp->hw->phy->current_channel = 5;
-	lp->hw->phy->current_page = 2;
+//	lp->hw->phy->current_channel = 3;
+//	lp->hw->phy->current_page = 2;
 
 	/* symbol_duration: la duree d'un symbole PSDU module et code */
-	lp->hw->phy->symbol_duration = 4; /* rf215 (ttx_start_delay), rf230 (tTR10) */
+//	lp->hw->phy->symbol_duration = 4; /* rf215 (ttx_start_delay), rf230 (tTR10) */
 	lp->hw->phy->supported.tx_powers = at86rf215_powers;
 	lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(at86rf215_powers);
-	lp->hw->phy->supported.cca_ed_levels = at86rf215_ed_levels;
-	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(
-		at86rf215_ed_levels);
+//	lp->hw->phy->supported.cca_ed_levels = at86rf215_ed_levels;
+//	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(
+//		at86rf215_ed_levels);
 
 	/* Define the ED threshold + the transmitter power */
-	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
-	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[10];
+//	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
+	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[3];
 
 	return rc;
 }
@@ -1073,8 +1167,8 @@ static int at86rf215_probe(struct spi_device *spi)
 {
 	struct ieee802154_hw *hw;
 	struct at86rf215_local *lp;
-	int rc, rstn, irq_type, irq;
-	unsigned int status, val;
+	int rc, rstn, irq_type, irq, i;
+	unsigned int status, val, reg;
 
 	pr_info("[Probing]: AT86RF215 probe function is called ..\n");
 
@@ -1201,12 +1295,48 @@ static int at86rf215_probe(struct spi_device *spi)
                 printk (KERN_DEBUG "The radio is OFF", status);
         }
 
-	/* Set the frame length. */
-        rc = (regmap_write(lp->regmap, RG_BBC0_TXFLL, 0xff)  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
+	/* Set the frame length. Exple :20 bytes */
+        rc = regmap_write(lp->regmap, RG_BBC0_TXFLL, 0x10);
+//  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
         if (rc){
                 printk(KERN_ALERT "Error while writing frame length");
                 return rc;
         }
+
+	rc = regmap_read(lp->regmap, RG_BBC0_TXFLL, &status);
+	printk(KERN_ALERT "RG_BBC0_TXFLL = %x", status);
+
+
+	rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX, 0x1);
+        if (rc){
+                printk(KERN_ALERT "Error while writing RG_BBC0_PC_CTX");
+                return rc;
+        }
+
+	rc = regmap_read(lp->regmap, RG_RF09_EDC, &status);
+        if (rc){
+                printk(KERN_ALERT "Impossible de lire RG_RF09_EDC");
+                return rc;
+        }
+	printk(KERN_ALERT "RG_RF09_EDC = %x", status);
+
+	/*Initialisation des registres de transmission*/
+/*	reg = RG_BBC0_FBTXS;
+	for(i=0; i<2047; i++){
+		rc = regmap_write(lp->regmap, reg, 0x00);
+		if (rc){
+			printk(KERN_ALERT "Impossible to reset the register : %x", reg);
+			return rc;
+		}
+                reg ++;
+	}
+*/
+
+
+	/* TODO: Reception implementation will be changed later */
+//	enable_irq(lp->spi->irq);
+//	at86rf215_sync_state_change(lp, RF_RX_STATUS);
+//	disable_irq(lp->spi->irq);
 
 	return rc;
 
@@ -1220,9 +1350,15 @@ free_dev:
 static int at86rf215_remove(struct spi_device *spi)
 {
 	struct at86rf215_local *lp = spi_get_drvdata(spi);
-
+	int rc;
+	unsigned int val;
 	pr_info("[Removing]: AT86RF215 remove function is called ..\n");
-	regmap_write(lp->regmap, RG_RF09_IRQM, 0x0000);
+//	regmap_write(lp->regmap, RG_RF09_IRQM, 0x0000);
+	rc = regmap_read(lp->regmap, RG_RF09_CNL, &val);
+	if (rc)
+		printk(KERN_DEBUG "Impossible to read RG_RF09_CNL register.");
+	else
+		printk(KERN_DEBUG "RG_RF09_CNL = %x", val);
 	ieee802154_unregister_hw(lp->hw);
 	ieee802154_free_hw(lp->hw);
 	dev_dbg(&spi->dev, "unregistered at86rf215\n");
