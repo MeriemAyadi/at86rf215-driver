@@ -1,0 +1,19 @@
+#Please add the following in your device tree.
+
+&spi0 {
+        status="okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
+        cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
+
+        at86rf215: at86rf215@0{
+                compatible = "atmel,at86rf215";
+                reg = <0>;    /* CE0 */
+                interrupts = <16 4>; /* active high level-sensitive */
+                interrupt-parent = <&gpio>;
+                reset-gpio = <&gpio 18 1>;
+                spi-max-frequency = <7500000>;
+                spi-cpha=<0>; /* Spi clock is low when inactive */
+                spi-cpol=<0>; /* Data is valid on clock leading edge */
+        };
+}
