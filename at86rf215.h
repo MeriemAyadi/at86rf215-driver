@@ -131,7 +131,7 @@
 
 
 /********** RESET register **********/
-#define RG_RST (0x0005) //Resetting the entire device via an SPI command. To do that, write 0x07 to this register.
+#define RG_RF_RST (0x0005) //Resetting the entire device via an SPI command. To do that, write 0x07 to this register.
 
 /********* Clock Output ************/
 #define RG_RF_CLKO    (0x0007)
@@ -205,7 +205,7 @@
 #define SR_RF09_AGCS_GCW
 #define SR_RF09_AGCS_TGT
 //Received Signal Strength Indicator
-#define RG_RF09_RSSI
+#define RG_RF09_RSSI (0x10D)
 //Energy Detection Configuration
 #define RG_RF09_EDC (0x010E)
 //Receiver Energy Detection Averaging Duration
@@ -243,7 +243,7 @@
 //External Frontend Control Pad Configuration
 #define RG_RF09_PADFE
 /** 7) Battery Monitor (BATMON) **/
-#define RG_RF_BMDVC
+#define RG_RF_BMDVC (0x8)
 #define SR_RF_BMDVC_BMVTH
 #define SR_RF_BMDVC_BMHR
 #define SR_RF_BMDVC_BMHR_BMS
@@ -272,9 +272,7 @@
 /** 17) Phase Measurement Unit**/
 /** 18) Timestamp Counter **/
 
+#define RG_RF09_RNDV  (0x111)
 
-#define RG_RF24_IRQM      (0x0200)
-#define RG_EXAMPLE        (0x0117)
-#define RG_EXAMPLE2       (0X02000)
 #endif /* !_AT86RF230_H */
 

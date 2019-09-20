@@ -1,4 +1,3 @@
-
 /* NOTES:
  * 1) The comments that do not respect the code width ( 80 caracters per line )
  * are going to be deleted soon.
@@ -137,13 +136,13 @@ static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 	/* For BBC0_FBTXS registers */
 	if ( (reg & 0x2800) == 0x2800)
 		return true;
+	if ((reg & 0X100) == 0X100)
+		return true;
 
 	switch (reg) {
+	case RG_RF09_AUXS:
 	case RG_BBC0_FBTXS:
 	case RG_BBC0_OFDMPHRTX:
-	case RG_EXAMPLE:
-	case RG_EXAMPLE2:
-	case RG_RF24_IRQM:
 	case RG_RF09_CMD:
 	case RG_RF09_STATE:
 	case RG_BBC0_AMEDT:
@@ -170,6 +169,8 @@ static bool at86rf215_reg_writeable(struct device *dev, unsigned int reg)
 	case RG_RF09_EDC:
 	case RG_BBC0_AFFTM:
 	case RG_BBC0_PS:
+	case RG_RF09_RSSI:
+	case RG_RF09_RNDV:
 		return true;
 	default:
 		return false;
@@ -202,7 +203,6 @@ static bool at86rf215_reg_volatile(struct device *dev, unsigned int reg)
 {
 	/* can be changed during runtime */
 	switch (reg) {
-	case RG_RF24_IRQM:
 	case RG_RF09_CMD:
 	case RG_RF09_STATE:
 	case RG_RF09_IRQS:
@@ -297,6 +297,7 @@ static void at86rf215_async_read_reg(struct at86rf215_local *lp, u16 reg,
 	int rc, irq;
 	u8 *tx_buf = ctx->buf;
 
+	printk(KERN_ALERT "==> reg = %x", reg);
 	tx_buf[0] = ((reg & CMD_REG_MSB) >> 8);
 	tx_buf[1] = reg & CMD_REG_LSB;
 	ctx->msg.complete = complete;
@@ -385,6 +386,7 @@ static void at86rf215_irq_status(void *context)
 
 	enable_irq(lp->spi->irq);
 	if (val & IRQS_4_TXFE) {
+		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
 		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
 //		disable_irq(lp->spi->irq);
 	}
@@ -510,9 +512,9 @@ static void at86rf215_async_state_change_start(void *context)
 {
 	struct at86rf215_state_change *ctx = context;
 	struct at86rf215_local *lp = ctx->lp;
-	u8 *buf = ctx->buf;
+	u8 *buffer = ctx->buf;
 
-	const u8 trx_state = buf[2];
+	const u8 trx_state = buffer[2];
 
 	printk(KERN_DEBUG " async_state_change_start: actual state = %x", trx_state);
 
@@ -616,14 +618,16 @@ static void at86rf215_write(void *context)
         struct at86rf215_state_change *state = &lp->state;
         struct sk_buff *skb = lp->tx_skb;
         u8 *buf = ctx->buf;
-        int rc, irq;
+        int i, rc, irq;
 
-        lp->tx_skb = skb;
+//        lp->tx_skb = skb;
 
         buf[0] = ((RG_BBC0_FBTXS & CMD_REG_MSB) >> 8) | CMD_WRITE;
         buf[1] = RG_BBC0_FBTXS & CMD_REG_LSB;
         memcpy(buf + 2, skb->data, skb->len);
+//	memcpy(buf + 2, x, 100);
         ctx->trx.len = skb->len + 2;
+//	ctx->trx.len = 102;
 	printk(KERN_ALERT "==> THE BUFFER LENGTH IS : %d", skb->len);
         ctx->msg.complete = at86rf215_write_frame_complete;
         rc = spi_async(lp->spi, &ctx->msg);
@@ -640,20 +644,40 @@ static int at86rf215_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 	struct at86rf215_local *lp = hw->priv;
 	struct at86rf215_state_change *ctx = &lp->tx;
 	struct at86rf215_state_change *state = &lp->state;
-	const void *buf;
-	unsigned int x = 0x0123456789abcdef;
-
-	buf = skb->data;
+//	const void *buf;
+	const void *y;
+	int i;
+//	buf = skb->data;
 	lp->tx_skb = skb;
+
+        u8 x[100];
+        for ( i =0; i< 100; i++)
+                x[i]= 0xab;
+
+	y=x;
+	skb->len =100;
+	skb->data = y;
 
 	printk(KERN_DEBUG "We're in _xmit function");
 	/*Debugging*/
-	print_hex_dump(KERN_ALERT, "mem: ", DUMP_PREFIX_ADDRESS, 16, 1, buf, skb->len, 0);
+	print_hex_dump(KERN_ALERT, "mem: ", DUMP_PREFIX_ADDRESS, 16, 1, skb->data, skb->len, 0);
 	at86rf215_async_state_change(lp, ctx, RF_TXPREP_STATUS, at86rf215_write);
-
 
 	return 0;
 }
+
+static int at86rf215_transmit(struct ieee802154_hw *hw)
+{
+        struct at86rf215_local *lp = hw->priv;
+        struct at86rf215_state_change *ctx = &lp->tx;
+        struct at86rf215_state_change *state = &lp->state;
+
+        printk(KERN_DEBUG "We're in _xmit function");
+        at86rf215_async_state_change(lp, ctx, RF_TXPREP_STATUS, at86rf215_write);
+
+        return 0;
+}
+
 
 static int at86rf215_ed(struct ieee802154_hw *hw, u8 *level)
 {
@@ -681,16 +705,16 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
 	reg= 0x2800;
 
 /* BBC0_PC_CTX register must be set to 0 to stop the continuous transmission.*/
-/*        rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX,  0x0);
+        rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX,  0x0);
         if (rc)
                 printk(KERN_ALERT "Impossible to ecrire SR_BBC0_PC_CTX");
         else
                 printk(KERN_ALERT "SR_BBC0_PC_CTX, DONE.", val);
-*/
+
 
 	/*Debugging*/
 
-/*	for ( i=0; i < 100; i++){
+	for ( i=0; i < 5; i++){
 		rc= regmap_read(lp->regmap, reg, &val);
 		reg = reg +1;
 	        if (rc)
@@ -698,7 +722,7 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
 	        else
         	        printk(KERN_DEBUG "_stop : BBC0_FBTXS = %x", val);
 	}
-*/
+
         rc = regmap_read(lp->regmap, RG_BBC0_PS,  &val);
         if (rc)
                 printk(KERN_ALERT "Impossible to lire le registre");
@@ -736,6 +760,16 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
                 printk(KERN_DEBUG "_stop : We are in state :  %x", val);
 
         printk(KERN_DEBUG "_stop is being called");
+
+        rc = regmap_read(lp->regmap, RG_BBC0_TXFLL, &val);
+        if (rc)
+                        printk(KERN_ALERT "coulnt read register TXFLL");
+	printk(KERN_ALERT "TXFLL= %x", val);
+        rc = regmap_read(lp->regmap, RG_BBC0_TXFLH, &val);
+        if (rc)
+                        printk(KERN_ALERT "coulnt read register TXFLH");
+        printk(KERN_ALERT "TXFLH= %x", val);
+
 
 	disable_irq(lp->spi->irq);
 }
@@ -777,7 +811,6 @@ static int at86rf215_set_channel(struct at86rf215_local *lp, u8 page,
 		printk(KERN_DEBUG "RG_RF09_CNL or SR_RF09_CNM_CNH can't be set");
                 return rc;
 	}
-
         /* Channel Mode 0 : IEEE compliant channel scheme */
 /*        rc = at86rf215_write_subreg(lp, SR_RF09_CNM_CM, 0x0);
         if (rc){
@@ -831,8 +864,9 @@ static int at86rf215_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 #define AT86RF215_MAX_TX_POWERS 0x1F /* 32 registres */
 /* PLease check datasheet page 50, register concerned: TXPWR */
 static const s32 at86rf215_powers[AT86RF215_MAX_TX_POWERS +1] =
-{ 3100, 3000, 2900, 2800, 2700, 2600, 2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100, 0};
-
+//{ 3100, 3000, 2900, 2800, 2700, 2600, 2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100, 0};
+{0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200,
+ 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000, 3100};
 /* change  the corresponding register with the suitable power value */
 static int at86rf2xx_set_txpower(struct at86rf215_local *lp, s32 mbm)
 {
@@ -1145,8 +1179,8 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 	lp->hw->phy->supported.channels[2] |= 0x7fe;
 
 	/* Select page and channel by default. */
-//	lp->hw->phy->current_channel = 3;
-//	lp->hw->phy->current_page = 2;
+	lp->hw->phy->current_channel = 3;
+	lp->hw->phy->current_page = 2;
 
 	/* symbol_duration: la duree d'un symbole PSDU module et code */
 //	lp->hw->phy->symbol_duration = 4; /* rf215 (ttx_start_delay), rf230 (tTR10) */
@@ -1158,7 +1192,7 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 
 	/* Define the ED threshold + the transmitter power */
 //	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
-	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[3];
+	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[28];
 
 	return rc;
 }
@@ -1296,16 +1330,11 @@ static int at86rf215_probe(struct spi_device *spi)
         }
 
 	/* Set the frame length. Exple :20 bytes */
-        rc = regmap_write(lp->regmap, RG_BBC0_TXFLL, 0x10);
-//  && at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x7));
+        rc = regmap_write(lp->regmap, RG_BBC0_TXFLL, 0x64) || at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x0);
         if (rc){
                 printk(KERN_ALERT "Error while writing frame length");
                 return rc;
         }
-
-	rc = regmap_read(lp->regmap, RG_BBC0_TXFLL, &status);
-	printk(KERN_ALERT "RG_BBC0_TXFLL = %x", status);
-
 
 	rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX, 0x1);
         if (rc){
@@ -1319,6 +1348,33 @@ static int at86rf215_probe(struct spi_device *spi)
                 return rc;
         }
 	printk(KERN_ALERT "RG_RF09_EDC = %x", status);
+
+
+/*        reg= 0X100;
+        for(i=0;i<22;i++){
+                rc = regmap_read(lp->regmap, reg, &status);
+                if (rc)
+                        printk(KERN_ALERT "coulnt read register : %x",reg);
+                else
+                        printk(KERN_ALERT "RG (%x) = %x", reg, status);
+		reg ++;
+        }
+*/
+        rc = regmap_write(lp->regmap, RG_RF09_AUXS, 0x6);
+        if (rc){
+                printk(KERN_ALERT "Error while writing");
+        }
+
+        rc = regmap_write(lp->regmap, RG_RF09_RSSI, 0x90);
+        if (rc){
+                printk(KERN_ALERT "Error while writing");
+        }
+
+        rc = regmap_write(lp->regmap, RG_RF09_RNDV, 0x41);
+        if (rc){
+                printk(KERN_ALERT "Error while writing");
+        }
+
 
 	/*Initialisation des registres de transmission*/
 /*	reg = RG_BBC0_FBTXS;
@@ -1338,7 +1394,11 @@ static int at86rf215_probe(struct spi_device *spi)
 //	at86rf215_sync_state_change(lp, RF_RX_STATUS);
 //	disable_irq(lp->spi->irq);
 
-	return rc;
+/*µ	rc = at86rf215_transmit(lp->hw);
+	if (rc)
+		printk(KERN_ALERT "at86rf215_transmit FAILED !");
+*/
+	return 0;
 
 free_dev:
 	printk(KERN_ALERT "free_dev!");
@@ -1394,6 +1454,3 @@ module_spi_driver(at86rf215_driver);
 
 MODULE_DESCRIPTION("AT86RF215 Transceiver Driver");
 MODULE_LICENSE("GPL v2");
-
-
-
