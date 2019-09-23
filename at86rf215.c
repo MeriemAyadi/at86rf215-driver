@@ -1,9 +1,7 @@
-/* NOTES:
- * 1) The comments that do not respect the code width ( 80 caracters per line )
- * are going to be deleted soon.
- * 2) There are still few functions commented with " // " . They represents the
- * functions I am willing to uncomment/delete while making consistent progress
- * in the code. */
+/*
+ * AT86rf230/RF231 driver
+ */
+
 
 #include <linux/unistd.h>
 #include <linux/kernel.h>
@@ -15,27 +13,25 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/spi/spi.h>
-//#include <linux/spi/at86rf230.h>
 #include <linux/regmap.h>
 #include <linux/skbuff.h>
 #include <linux/of_gpio.h>
 #include <linux/ieee802154.h>
 #include <linux/debugfs.h>
+
 #include <net/mac802154.h>
 #include <net/cfg802154.h>
+
 #include "at86rf215.h"
 
-/* The following structure is used by function "at86rf215_get_pdata"
- * and was declared in <linux/spi/at86rf230.h> for AT86RF230 driver. */
+
 /* TODO: Probably, the following structure will be deleted later and "rstn" will be used directly */
 struct at86rf215_platform_data {
 	int	rstn;
 };
+
 struct at86rf215_local;
 
-/* TODO: I couldnt't find the value of t_sleep_to_off in datasheet */
-/* TODO: The following transition times will be edited. */
-/* All timings are in us. */
 struct at86rf215_chip_data {
 
         u16	t_power_to_off;
@@ -63,10 +59,7 @@ struct at86rf215_chip_data {
 	int	(*set_txpower)(struct at86rf215_local *, s32);
 };
 
-/* TODO The buffer size might change. */
-#define AT86RF215_MAX_BUF               (2047)
-/* tx retries to access the TX_ON state */
-//#define AT86RF215_MAX_TX_RETRIES        7
+#define AT86RF215_MAX_BUF               (2047 + 3)
 /* We use the recommended 5 minutes timeout to recalibrate */
 #define AT86RF215_CAL_LOOP_TIMEOUT      (5 * 60 * HZ)
 
@@ -227,7 +220,6 @@ static bool at86rf215_reg_precious(struct device *dev, unsigned int reg)
 	}
 }
 
-/*#define AT86RF215_NUMREGS 0x12E*/
 #define AT86RF215_NUMREGS 0xFFFFFFFF
 static const struct regmap_config at86rf215_regmap_spi_config = {
 	.reg_bits		= 16,
@@ -253,23 +245,11 @@ static void at86rf215_async_error_recover_complete(void *context)
 	ieee802154_wake_queue(lp->hw);
 }
 
-/* TODO: Check to which state we should switch ? */
-/* static void at86rf215_async_error_recover(void *context)
- * {
- *      struct at86rf215_state_change *ctx = context;
- *      struct at86rf215_local *lp = ctx->lp;
- *
- *      lp->is_tx = 0;
- *      at86rf215_async_state_change(lp, ctx, STATE_RX_AACK_ON, at86rf215_async_error_recover_complete);
- * }
- */
-
 static inline void at86rf215_async_error(struct at86rf215_local *	lp,
 					 struct at86rf215_state_change *ctx,
 					 int				rc)
 {
-	//at86rf215_async_state_change(lp, ctx, STATE_FORCE_TRX_OFF, at86rf215_async_error_recover);
-	/* TODO: What state should we reach whenever an error happens ?Ã*/
+	/* TODO: What state should we reach whenever an error happens ? */
 	at86rf215_async_error_recover_complete(ctx);
 }
 
@@ -346,16 +326,15 @@ static void at86rf215_irq_status(void *context)
 
 	enable_irq(lp->spi->irq);
 	if (val & IRQS_4_TXFE) {
-		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
-		printk(KERN_DEBUG "TRANSMISSION COMPLETE !");
+		printk(KERN_DEBUG "[INTERRUPTION]: Transmission complete!");
 //		disable_irq(lp->spi->irq);
 	}
 	else if (val & IRQS_0_RXFS) {
-		printk(KERN_DEBUG "A valid frame header is decoded !");
+		printk(KERN_DEBUG "[INTERRUPTION]: A valid frame header is decoded.");
 		disable_irq(lp->spi->irq);
 	}
 	else if (val)
-		printk(KERN_DEBUG "An INTERRUPTION HAS OCCURED !!!!");
+		printk(KERN_DEBUG "[INTERRUPTION]: Another interruption has occured.");
 	else
 		kfree(ctx);
 }
@@ -484,14 +463,6 @@ static void at86rf215_async_state_change_start(void *context)
 		return;
 	}
 
-/*	if ((trx_state == STATE_RF_TX) & ( ctx->to_state == STATE_RF_TXPREP)) {
-		printk (KERN_DEBUG "We're in still in TX state, the transmission is not done yet");
-		at86rf215_async_read_reg(lp, RG_RF09_STATE, ctx,
-                                         at86rf215_async_state_change_start);
-                udelay(1);
-		return;
-	}
-*/
 	/* Check if we already are in the state which we wanna change to. */
 	if (trx_state == ctx->to_state) {
 		if (ctx->complete){
@@ -504,6 +475,7 @@ static void at86rf215_async_state_change_start(void *context)
 
 	if (!(ctx->from_state))
 		ctx->from_state = trx_state;
+
 	/* Set current state to the context of state change */
 	printk(KERN_DEBUG "we're moving from state %x to state: %x", ctx->from_state, ctx->to_state);
 	ctx->from_state = trx_state;
@@ -596,7 +568,6 @@ static int at86rf215_ed(struct ieee802154_hw *hw, u8 *level)
 	return 0;
 }
 
-/* TODO : Implement the following */
 static int at86rf215_start(struct ieee802154_hw *hw)
 {
 	struct at86rf215_local *lp = hw->priv;
@@ -610,7 +581,7 @@ static void at86rf215_stop(struct ieee802154_hw *hw)
 	struct at86rf215_local *lp = hw->priv;
 	int rc;
 
-	/* BBC0_PC_CTX register must be set to 0 to stop the continuous transmission.*/
+	/* stop the continuous transmission.*/
         rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX,  0x0);
         if (rc)
                 printk(KERN_ALERT "Impossible to ecrire SR_BBC0_PC_CTX");
@@ -710,9 +681,9 @@ static int at86rf215_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 #define AT86RF215_MAX_TX_POWERS 0x1F /* 32 registres */
 /* PLease check datasheet page 50, register concerned: TXPWR */
 static const s32 at86rf215_powers[AT86RF215_MAX_TX_POWERS +1] =
-//{ 3100, 3000, 2900, 2800, 2700, 2600, 2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100, 0};
 {0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200,
  2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000, 3100};
+
 /* change  the corresponding register with the suitable power value */
 static int at86rf2xx_set_txpower(struct at86rf215_local *lp, s32 mbm)
 {
@@ -725,6 +696,7 @@ static int at86rf2xx_set_txpower(struct at86rf215_local *lp, s32 mbm)
 	return -EINVAL;
 }
 
+/* TODO: Combine "at86rf215_set_txpower" and "at86rf2xx_set_txpower" functions. */
 /* Set the transmitter power */
 static int at86rf215_set_txpower(struct ieee802154_hw *hw, s32 mbm)
 {
@@ -795,24 +767,24 @@ static const struct ieee802154_ops at86rf215_ops = {
 /* Datasheet : page 189 (Transition time) */
 static struct at86rf215_chip_data at86rf215_data = {
 	.t_power_to_off	        = 500, /*us*/
-	.t_sleep_to_off         = 1, /*us*/
+	.t_sleep_to_off         = 1,   /*us*/
 	.t_dsleep_to_off        = 500, /*us*/
-	.t_reset_to_off         = 1, /*us*/
+	.t_reset_to_off         = 1,   /*us*/
         .t_off_to_prep          = 200, /*us*/
-	.t_off_to_rx            = 90, /*us*/
+	.t_off_to_rx            = 90,  /*us*/
 	.t_prep_to_tx           = 200, /*ns*/
-	.t_tx_start_delay       = 4, /*us*/
+	.t_tx_start_delay       = 4,   /*us*/
 	.t_prep_to_rx           = 200, /*ns*/
 	.t_prep_to_off          = 200, /*ns*/
 	.t_rx_to_off            = 200, /*ns*/
 	.t_rx_to_prep           = 200, /*ns*/
-	.t_txfe_to_prep		= 200, /*ns*/ /*Transition time from TX (IRQ TXFE) to state TXPREP.*/
-	.t_txprep_to_prep	= 33, /*us*/ /*Transition time from TX (SPI command CMD=TXPREP) to state TXPREP.*/
-	.t_tx_to_off            = 200, /*ns */ /*Transition time from TX (SPI command CMD=TRXOFF) to state TRXOFF.*/
-	.t_vreg_settl		= 35, /*us*/ /*Settling time of AVDD or DVDD voltage regulator. */
-	.t_xosc_settl		= 150, /*us*/ /*Settling time of the crystal oscillator.*/
-	.t_pll_ch_switch	= 100, /*us*/ /*Frequency channel switch time (PLL) in state TXPREP.*/
-	.t_rxfe			= 100, /*us*/ /*IRQ RXFE processing delay relative to frame end; typical time depends on specific PHY mode.*/
+	.t_txfe_to_prep		= 200, /*ns*/ /*TX (TXFE) ==> TXPREP */
+	.t_txprep_to_prep	= 33,  /*us*/ /*TX (CMD=TXPREP) ==> TXPREP */
+	.t_tx_to_off            = 200, /*ns*/ /*TX (CMD=TRXOFF) ==> TRXOFF */
+	.t_vreg_settl		= 35,  /*us*/ /*Settling time of AVDD/DVDD */
+	.t_xosc_settl		= 150, /*us*/ /*Settling time of crystal OCS.*/
+	.t_pll_ch_switch	= 100, /*us*/ /*Freq channel switch time(PLL)*/
+	.t_rxfe			= 100, /*us*/ /*RX(RXFE) depends on PHY mode.*/
 	.rssi_base_val		= -117,
 	.set_channel		= at86rf215_set_channel,
 	.set_txpower		= at86rf2xx_set_txpower,
@@ -820,23 +792,24 @@ static struct at86rf215_chip_data at86rf215_data = {
 
 static int at86rf215_hw_init(struct at86rf215_local *lp)
 {
-	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH; /* Could be IRQ_ACTIVE_LOW */
+	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH;
 	unsigned int val;
 
-	/* TODO: THis should be replaced with an async function. */
+	/* TODO: This should be replaced with an async function. */
 	/* Check if we're in state TRXOFF */
 	rc = regmap_read(lp->regmap, RG_RF09_STATE, &val);
 	if ((rc) || (val != RF_TRXOFF_STATUS)) {
 		printk(KERN_DEBUG "Hardware Initialisation: FAILED!");
 		return rc;
 	}
+
 	/* Configuring the IRQ pin polarity. */
 	irq_type = irq_get_trigger_type(lp->spi->irq);
 	if (irq_type == IRQ_TYPE_EDGE_FALLING || irq_type == IRQ_TYPE_LEVEL_LOW)
 		irq_pol = IRQ_ACTIVE_LOW;
 	rc = at86rf215_write_subreg(lp, SR_RF_CFG_IRQP, irq_pol);
 	if (rc) {
-		printk(KERN_DEBUG "irq failed");
+		printk(KERN_DEBUG "IRQ configuration failed.");
 		return rc;
 	}
 
@@ -962,25 +935,22 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 		return rc;
 	/* printk (KERN_DEBUG "[Detecting]: AT86RF215 part number: %x", part); */
 
-/* TODO: Check this stupid test.
- *      if ( (version != 1) || (version != 3)) {
- *              dev_err(&lp->spi->dev, "VN doesn't exist ( version : %x)\n", version);
- *              return -EINVAL;
- *      }
- *      if ((part != 52) | (part != 53) || (part != 54)) {
- *              dev_err(&lp->spi->dev, "PN doesn't exist ( Part Number : %x)\n", part);
- *              return -EINVAL;
- *      }
+	/* TODO: Check this stupid test. */
+/*        if ( (version != 1) || (version != 3)) {
+                dev_err(&lp->spi->dev, "VN doesn't exist ( version : %x)\n", version);
+                return -EINVAL;
+        }
+        if ((part != 52) | (part != 53) || (part != 54)) {
+                dev_err(&lp->spi->dev, "PN doesn't exist ( Part Number : %x)\n", part);
+                return -EINVAL;
+        }
 */
 
 	/* Please check mac802154.h */
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |           /* Tx will add FCS automatically */
 			IEEE802154_HW_RX_OMIT_CKSUM |           /* Rx will add FCS automatically */
-//			IEEE802154_HW_CSMA_PARAMS |             /* It supports csma parameters (p172)
-//	                                                         * (max_be,min_be,backoff exponents) */
-//			IEEE802154_HW_FRAME_RETRIES |           /* It supports ARET frame retries setting. */
-//			IEEE802154_HW_AFILT |                   /* It supports hardware address filter setting. */
 			IEEE802154_HW_PROMISCUOUS;              /* It supports promiscuous mode setting. */
+
 	/* Please check cfg802154.h */
 	lp->hw->phy->flags = WPAN_PHY_FLAG_TXPOWER |            /* It supports TXPWR setting */
 			     WPAN_PHY_FLAG_CCA_ED_LEVEL |       /* It supports cca ED threshold */
@@ -1015,15 +985,15 @@ static int at86rf215_detect_device(struct at86rf215_local *lp)
 	lp->hw->phy->current_page = 2;
 
 	/* symbol_duration: la duree d'un symbole PSDU module et code */
-//	lp->hw->phy->symbol_duration = 4; /* rf215 (ttx_start_delay), rf230 (tTR10) */
+	lp->hw->phy->symbol_duration = 4; /*(ttx_start_delay)*/
 	lp->hw->phy->supported.tx_powers = at86rf215_powers;
 	lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(at86rf215_powers);
-//	lp->hw->phy->supported.cca_ed_levels = at86rf215_ed_levels;
-//	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(
-//		at86rf215_ed_levels);
+	lp->hw->phy->supported.cca_ed_levels = at86rf215_ed_levels;
+	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(
+		at86rf215_ed_levels);
 
 	/* Define the ED threshold + the transmitter power */
-//	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
+	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
 	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[28];
 
 	return rc;
@@ -1099,7 +1069,7 @@ static int at86rf215_probe(struct spi_device *spi)
 
 	rc = at86rf215_detect_device(lp);
 	if (rc) {
-		printk(KERN_DEBUG "Device detecting failed.");
+		printk(KERN_DEBUG "[Probing]: Device detecting failed.");
 		goto free_dev;
 	}
 
@@ -1111,7 +1081,6 @@ static int at86rf215_probe(struct spi_device *spi)
 
 	rc = at86rf215_hw_init(lp);
 	if (rc) {
-		printk(KERN_ALERT "at86rf215_hw_init FAILED.");
 		goto free_dev;
 	}
 
@@ -1148,9 +1117,6 @@ static int at86rf215_probe(struct spi_device *spi)
                 goto free_dev;
         }
 
-//        irq= in_interrupt();
-//        printk(KERN_ALERT "==> INTERRUPTION CONTEXT: %x", irq);
-
 	rc = regmap_read(lp->regmap, RG_RF09_STATE, &status);
         if (rc) {
                 printk(KERN_DEBUG "Error while reading RG_RF09_CMD");
@@ -1161,38 +1127,21 @@ static int at86rf215_probe(struct spi_device *spi)
                 printk (KERN_DEBUG "The radio is OFF or bad wiring!");
         }
 
-	/* Set the frame length. Exple :20 bytes */
+	/* Set the frame length. Exple : 100 bytes */
         rc = regmap_write(lp->regmap, RG_BBC0_TXFLL, 0x64) || at86rf215_write_subreg(lp, SR_BBC0_TXFLH, 0x0);
         if (rc){
                 printk(KERN_ALERT "Error while writing frame length");
                 return rc;
         }
 
+	/* Continuous Transmition. */
 	rc = at86rf215_write_subreg(lp, SR_BBC0_PC_CTX, 0x1);
         if (rc){
                 printk(KERN_ALERT "Error while writing RG_BBC0_PC_CTX");
                 return rc;
         }
 
-	rc = regmap_read(lp->regmap, RG_RF09_EDC, &status);
-        if (rc){
-                printk(KERN_ALERT "Impossible de lire RG_RF09_EDC");
-                return rc;
-        }
-	printk(KERN_ALERT "RG_RF09_EDC = %x", status);
-
-
-/*        reg= 0X100;
-        for(i=0;i<22;i++){
-                rc = regmap_read(lp->regmap, reg, &status);
-                if (rc)
-                        printk(KERN_ALERT "coulnt read register : %x",reg);
-                else
-                        printk(KERN_ALERT "RG (%x) = %x", reg, status);
-		reg ++;
-        }
-*/
-        rc = regmap_write(lp->regmap, RG_RF09_AUXS, 0x6);
+/*        rc = regmap_write(lp->regmap, RG_RF09_AUXS, 0x6);
         if (rc){
                 printk(KERN_ALERT "Error while writing");
         }
@@ -1206,26 +1155,7 @@ static int at86rf215_probe(struct spi_device *spi)
         if (rc){
                 printk(KERN_ALERT "Error while writing");
         }
-
-
-	/*Initialisation des registres de transmission*/
-/*	reg = RG_BBC0_FBTXS;
-	for(i=0; i<2047; i++){
-		rc = regmap_write(lp->regmap, reg, 0x00);
-		if (rc){
-			printk(KERN_ALERT "Impossible to reset the register : %x", reg);
-			return rc;
-		}
-                reg ++;
-	}
 */
-
-
-	/* TODO: Reception implementation will be changed later */
-//	enable_irq(lp->spi->irq);
-//	at86rf215_sync_state_change(lp, RF_RX_STATUS);
-//	disable_irq(lp->spi->irq);
-
 	return 0;
 
 free_dev:
