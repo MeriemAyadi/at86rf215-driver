@@ -462,7 +462,7 @@ static void at86rf215_async_state_change_start(void *context)
 
 	const u8 trx_state = buffer[2];
 
-	printk(KERN_DEBUG "Actual state = %x", trx_state);
+	//printk(KERN_DEBUG "Actual state = %x", trx_state);
 
 	if (trx_state == STATE_RF_TRANSITION) {
 		printk(KERN_DEBUG "We're in a transition state.");
